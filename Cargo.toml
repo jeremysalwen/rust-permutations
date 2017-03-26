@@ -6,7 +6,7 @@ keywords = ["permutation", "permutations", "order", "sort", "group"]
 categories = ["algorithms", "data-structures"]
 license = "GPL-3.0+"
 readme = "readme.md"
-version = "0.2.0"
+version = "0.2.1"
 authors = ["Jeremy Salwen <jeremysalwen@gmail.com>"]
 
 [dependencies]
