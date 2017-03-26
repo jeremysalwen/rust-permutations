@@ -339,7 +339,7 @@ pub fn sort<T, D>(vec: D) -> Permutation
     return permutation;
 }
 
-/// Return the permutation that would sort a given slice by a comparator
+/// Return the permutation that would sort a given slice by a comparator.
 ///
 /// This is the same as `permutation::sort()` except that it allows you to specify
 /// the comparator to use when sorting similar to `std::slice.sort_by()`
@@ -365,7 +365,7 @@ pub fn sort_by<T, D, F>(vec: D, mut compare: F) -> Permutation
     return permutation;
 }
 
-/// Return the permutation that would sort a given slice by key.
+/// Return the permutation that would sort a given slice by a key function.
 ///
 /// This is the same as `permutation::sort()` except that it allows you to specify
 /// the key function simliar to `std::slice.sort_by_key()`

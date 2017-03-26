@@ -21,6 +21,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //! and computing them from sort orders.
 //!
 //! Some practical uses of this module are:
+//!
 //!  * Calculate a sort, and apply it later.
 //!  * Calculate a sort on one vector, and apply it to another vector.
 //!  * Calculate a sort on one vector, and apply it to multiple other vectors.
