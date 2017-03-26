@@ -15,5 +15,5 @@ Permutations is a rust library for manipulating and applying permutations.
 ## License
 GPL 3+
 
-##Credits
+## Credits
 Copyright 2017 Jeremy Salwen <jeremysalwen@gmail.com>

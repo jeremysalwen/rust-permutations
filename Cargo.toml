@@ -1,6 +1,6 @@
 [package]
 name = "permutation"
-description = "Small utility for manipulating permutations, allowing you to find the permutation of vector, and apply the permutation to another vector, among other thing."
+description = "Small utility for manipulating permutations, allowing you to find the permutation of vector, and apply the permutation to another vector, among other things."
 repository = "https://github.com/jeremysalwen/rust-permutations"
 keywords = ["permutation", "permutations", "order", "sort", "group"]
 categories = ["algorithms", "data-structures"]
