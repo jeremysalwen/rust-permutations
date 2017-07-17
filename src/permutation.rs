@@ -73,17 +73,19 @@ impl<'a, 'b> std::ops::Mul<&'b Permutation> for &'a Permutation {
 }
 
 impl Permutation {
-    /// Create a permutation from a vector of indices in one-line notation.
+    /// Create a permutation from a vector of indices.
     ///
-    /// See [Wikipedia](https://en.wikipedia.org/wiki/Permutation#Definition_and_notations) details about this notation.
+    /// from_vec(v) returns the permutation P such that P applied to [1,2,...,N] is v.
+    /// Note that this notation is the inverse of the usual [one-line notation](https://en.wikipedia.org/wiki/Permutation#Definition_and_notations)
+    /// used in mathematics.  This is a known issue and may change in a newer release.
     ///
     /// # Examples
     ///
     /// ```
     /// # use permutation::Permutation;
     /// let vec = vec!['a','b','c','d'];
-    /// let permutation = Permutation::from_vec(vec![0,2,1,3]);
-    /// assert!(permutation.apply_slice(&vec[..]) == vec!['a','c','b','d']);
+    /// let permutation = Permutation::from_vec(vec![0,2,3,1]);
+    /// assert!(permutation.apply_slice(&vec[..]) == vec!['a','c','d','b']);
     /// ```
     pub fn from_vec(vec: Vec<usize>) -> Permutation {
         let result = Permutation {
@@ -97,7 +99,6 @@ impl Permutation {
     /// Return the identity permutation of size N.
     ///
     /// This returns the identity permutation of N elements.
-    /// in one-line notation, this will just be (0, 1, 2, 3 ,..., N)
     ///
     /// # Examples
     /// ```
