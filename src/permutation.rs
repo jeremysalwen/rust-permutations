@@ -354,6 +354,61 @@ impl Permutation {
         return other;
     }
 
+    // For the in place methods, we apply each cycle in the permutation in turn, marking the indices with their MSB when
+    // they have been resolved. The MSB will always be unset as long as n <= isize::max_value().
+    // This way, we can recover the original indices in O(n) and perform no heap allocations.
+
+    #[inline(always)]
+    fn mark_idx(idx: usize) -> usize {
+        idx ^ isize::min_value() as usize
+    }
+
+    #[inline(always)]
+    fn idx_is_marked(idx: usize) -> bool {
+        (idx & (isize::min_value() as usize)) != 0
+    }
+
+    fn apply_slice_fwd_in_place<T>(&mut self, slice: &mut [T]) {
+        for idx in self.indices.iter() {
+            assert!(!Self::idx_is_marked(*idx));
+        }
+
+        for i in 0..self.indices.len() {
+            let i_idx = self.indices[i];
+
+            if Self::idx_is_marked(i_idx) {
+                continue;
+            }
+
+            if i_idx == i {
+                // For cycles of length 1, we don't perform any swaps
+                self.indices[i] = Self::mark_idx(i_idx);
+            } else {
+                // For all other cycles of length n, we need n swaps
+                let mut j = i;
+                let mut j_idx = i_idx;
+                'inner: loop {
+                    slice.swap(j, j_idx);
+                    self.indices[j] = Self::mark_idx(j_idx);
+
+                    j = j_idx;
+                    j_idx = self.indices[j];
+
+                    // When we loop back to the first index, we stop
+                    if j_idx == i {
+                        self.indices[j] = Self::mark_idx(j_idx);
+                        break 'inner;
+                    }
+                }
+            }
+        }
+
+        for idx in self.indices.iter_mut() {
+            assert!(Self::idx_is_marked(*idx));
+            *idx = Self::mark_idx(*idx);
+        }
+    }
+
     /// Apply a permutation to a slice of elements
     ///
     /// Given a slice of elements, this will permute the elements according
@@ -378,7 +433,6 @@ impl Permutation {
             true => self.apply_slice_bkwd(vec),
         }
     }
-
     /// Apply the inverse of a permutation to a slice of elements
     ///
     /// Given a slice of elements, this will permute the elements according
@@ -402,6 +456,75 @@ impl Permutation {
         match self.inv {
             false => self.apply_slice_bkwd(vec),
             true => self.apply_slice_fwd(vec),
+        }
+    }
+
+    /// Apply a permutation to a slice of elements
+    ///
+    /// Given a slice of elements, this will permute the elements in place according
+    /// to this permutation.
+    ///
+    /// This method borrows `self` mutably to avoid allocations, but the permutation
+    /// will be unchanged after it returns.
+    ///
+    /// Note that unlike the other `apply_*` methods, this method *requires* the permutation
+    /// to be normalized in the opposite direction, or it will panic.
+    ///
+    /// # Panics
+    ///
+    /// If the permutation is not normalized for backward application.
+    /// If `slice.len() != self.len()`.
+    /// If `slice.len()` > isize::max_value(), due to implementation reasons.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use permutation::Permutation;
+    /// let mut permutation = Permutation::from_vec(vec![0,3,1,2]);
+    /// let mut vec = vec!['a', 'b', 'c', 'd'];
+    /// let permutation_old = permutation.clone();
+    /// permutation.apply_slice_in_place(vec.as_mut_slice());
+    /// assert_eq!(vec, vec!['a', 'd', 'b', 'c']);
+    /// ```
+    pub fn apply_slice_in_place<T>(&mut self, slice: &mut [T]) {
+        assert_eq!(slice.len(), self.len());
+        match self.inv {
+            false => self.apply_slice_fwd_in_place(slice),
+            true => panic!("Permutation not normalized for backward application"),
+        }
+    }
+
+    /// Apply the inverse of a permutation to a slice of elements
+    ///
+    /// Given a slice of elements, this will permute the elements in placeaccording
+    /// to the inverse of this permutation.
+    /// This is equivalent to "undoing" the permutation.
+    ///
+    /// This method borrows `self` mutably to avoid allocations, but the permutation
+    /// will be unchanged after it returns.
+    ///
+    /// # Panics
+    ///
+    /// If the permutation is not normalized for forward application.
+    /// If `slice.len() != self.len()`.
+    /// If `slice.len()` > isize::max_value(), due to implementation reasons.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use permutation::Permutation;
+    /// let mut permutation = Permutation::from_vec(vec![0,3,1,2]).normalize(false);
+    /// let mut vec = vec!['a', 'b', 'c', 'd'];
+    /// permutation.apply_inv_slice_in_place(vec.as_mut_slice());
+    /// assert_eq!(vec, vec!['a', 'c', 'd', 'b']);
+    /// ```
+    pub fn apply_inv_slice_in_place<T>(&mut self, slice: &mut [T]) {
+        assert_eq!(slice.len(), self.len());
+        assert!(slice.len() <= isize::max_value() as usize);
+
+        match self.inv {
+            false => panic!("Permutation not normalized for forward application"),
+            true => self.apply_slice_fwd_in_place(slice),
         }
     }
 }
@@ -692,5 +815,35 @@ mod tests {
         p2 = p2.normalize(false);
         p3 = p3.normalize(true);
         check_not_equal_inverses(&p2, &p3);
+    }
+
+    #[test]
+    fn apply_in_place() {
+        let mut p = Permutation::from_vec(vec![2, 0, 1, 4, 3]);
+        let p_old = p.clone();
+
+        let mut vec = vec!['a', 'b', 'c', 'd', 'e'];
+
+        p.apply_slice_in_place(vec.as_mut_slice());
+
+        assert_eq!(vec, vec!['c', 'a', 'b', 'e', 'd']);
+        assert_eq!(p.indices, p_old.indices);
+        assert_eq!(p.inv, p_old.inv);
+    }
+
+    #[test]
+    fn apply_inv_in_place() {
+        let mut p = Permutation::from_vec(vec![2, 0, 1, 4, 3])
+            .inverse()
+            .normalize(true);
+        let p_old = p.clone();
+
+        let mut vec = vec!['c', 'a', 'b', 'e', 'd'];
+
+        p.apply_slice_in_place(vec.as_mut_slice());
+
+        assert_eq!(vec, vec!['a', 'b', 'c', 'd', 'e']);
+        assert_eq!(p.indices, p_old.indices);
+        assert_eq!(p.inv, p_old.inv);
     }
 }
