@@ -368,7 +368,7 @@ impl Permutation {
         (idx & (isize::min_value() as usize)) != 0
     }
 
-    fn apply_slice_fwd_in_place<T>(&mut self, slice: &mut [T]) {
+    fn apply_slice_bkwd_in_place<T>(&mut self, slice: &mut [T]) {
         for idx in self.indices.iter() {
             assert!(!Self::idx_is_marked(*idx));
         }
@@ -489,7 +489,7 @@ impl Permutation {
     pub fn apply_slice_in_place<T>(&mut self, slice: &mut [T]) {
         assert_eq!(slice.len(), self.len());
         match self.inv {
-            false => self.apply_slice_fwd_in_place(slice),
+            false => self.apply_slice_bkwd_in_place(slice),
             true => panic!("Permutation not normalized for backward application"),
         }
     }
@@ -524,7 +524,7 @@ impl Permutation {
 
         match self.inv {
             false => panic!("Permutation not normalized for forward application"),
-            true => self.apply_slice_fwd_in_place(slice),
+            true => self.apply_slice_bkwd_in_place(slice),
         }
     }
 }
