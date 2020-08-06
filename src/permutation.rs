@@ -356,8 +356,7 @@ pub fn sort<T, D>(vec: D) -> Permutation
 /// assert!(vec == permuted);
 /// ```
 pub fn sort_by<T, D, F>(vec: D, mut compare: F) -> Permutation
-    where T: Ord,
-          D: Deref<Target = [T]>,
+    where D: Deref<Target = [T]>,
           F: FnMut(&T, &T) -> Ordering
 {
     let mut permutation = Permutation::one(vec.len());
@@ -507,6 +506,13 @@ mod tests {
         let vec = vec!["aaabaab", "aba", "cas", "aaab"];
         let perm = permutation::sort_by(vec, |a, b| a.cmp(b));
         assert!(perm == Permutation::from_vec(vec![3, 0, 1, 2]));
+    }
+
+    #[test]
+    fn by_partially_ordered_cmp() {
+        let vec = vec![1.0, 5.0, 3.0, 2.0, 8.0];
+        let perm = permutation::sort_by(vec, |a, b| a.partial_cmp(b).unwrap());
+        assert!(perm == Permutation::from_vec(vec![0, 3, 2, 1, 4]));
     }
 
     #[test]
