@@ -17,12 +17,12 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-
 use std;
 use std::cmp::Ordering;
+use std::convert::identity;
 use std::ops::Deref;
 
-#[derive(Clone,Debug)]
+#[derive(Clone, Debug)]
 pub struct Permutation {
     inv: bool,
     indices: Vec<usize>,
@@ -62,12 +62,10 @@ impl<'a, 'b> std::ops::Mul<&'b Permutation> for &'a Permutation {
         match (self.inv, rhs.inv) {
             (_, false) => Permutation::from_vec(self.apply_slice(&rhs.indices[..])),
             (false, true) => return self * &(rhs * &Permutation::one(self.len())),
-            (true, true) => {
-                Permutation {
-                    inv: true,
-                    indices: rhs.apply_inv_slice(&self.indices[..]),
-                }
-            }
+            (true, true) => Permutation {
+                inv: true,
+                indices: rhs.apply_inv_slice(&self.indices[..]),
+            },
         }
     }
 }
@@ -133,9 +131,15 @@ impl Permutation {
     /// catch this on construction, so it should never return true.
     ///
     pub fn valid(&self) -> bool {
-        let mut sorted = self.indices.clone();
-        sorted.sort();
-        return sorted.iter().enumerate().all(|(i, &j)| i == j);
+        // sufficient to verify that all indices 0..N are found
+        let mut found = vec![false; self.len()];
+        for i in self.indices.iter().copied() {
+            if i > self.len() {
+                return false;
+            }
+            found[i] = true;
+        }
+        found.into_iter().all(identity)
     }
 
     /// Return the inverse of a permutation.
@@ -188,14 +192,10 @@ impl Permutation {
             } else {
                 (&self.inverse() * &Permutation::one(len)).inverse()
             }
-
         }
     }
     fn apply_idx_fwd(&self, idx: usize) -> usize {
-        self.indices
-            .iter()
-            .position(|&v| v == idx)
-            .unwrap()
+        self.indices.iter().position(|&v| v == idx).unwrap()
     }
     fn apply_idx_bkwd(&self, idx: usize) -> usize {
         self.indices[idx]
@@ -210,7 +210,7 @@ impl Permutation {
     ///
     /// ```
     /// # use permutation::Permutation;
-    /// let permutation = Permutation::from_vec(vec![0,2,1]);
+    /// let permutation = Permutation::from_vec(vec![0,2,3,1]);
     /// assert!(permutation.apply_idx(2) == 1);
     pub fn apply_idx(&self, idx: usize) -> usize {
         match self.inv {
@@ -230,7 +230,7 @@ impl Permutation {
     ///
     /// ```
     /// # use permutation::Permutation;
-    /// let permutation = Permutation::from_vec(vec![0,2,1]);
+    /// let permutation = Permutation::from_vec(vec![0,2,3,1]);
     /// assert!(permutation.apply_inv_idx(1) == 2);
     /// ```
     pub fn apply_inv_idx(&self, idx: usize) -> usize {
@@ -240,16 +240,15 @@ impl Permutation {
         }
     }
     fn apply_slice_fwd<T: Clone, D>(&self, vec: D) -> Vec<T>
-        where D: Deref<Target = [T]>
+    where
+        D: Deref<Target = [T]>,
     {
-        self.indices
-            .iter()
-            .map(|&idx| vec[idx].clone())
-            .collect()
+        self.indices.iter().map(|&idx| vec[idx].clone()).collect()
     }
 
     fn apply_slice_bkwd<T: Clone, D>(&self, vec: D) -> Vec<T>
-        where D: Deref<Target = [T]>
+    where
+        D: Deref<Target = [T]>,
     {
         let mut other: Vec<T> = vec.to_vec();
         for (i, idx) in self.indices.iter().enumerate() {
@@ -271,7 +270,8 @@ impl Permutation {
     /// assert!(permutation.apply_slice(&vec[..]) == vec!['a', 'd', 'b', 'c']);
     /// ```
     pub fn apply_slice<T: Clone, D>(&self, vec: D) -> Vec<T>
-        where D: Deref<Target = [T]>
+    where
+        D: Deref<Target = [T]>,
     {
         assert!(vec.len() == self.len());
         match self.inv {
@@ -294,7 +294,8 @@ impl Permutation {
     /// assert!(permutation.apply_inv_slice(vec) == vec!['a', 'c', 'd', 'b']);
     /// ```
     pub fn apply_inv_slice<T: Clone, D>(&self, vec: D) -> Vec<T>
-        where D: Deref<Target = [T]>
+    where
+        D: Deref<Target = [T]>,
     {
         assert!(vec.len() == self.len());
         match self.inv {
@@ -302,7 +303,238 @@ impl Permutation {
             true => self.apply_slice_fwd(vec),
         }
     }
+
+    /// Compute the cyclic decomposition of the permutation.
+    ///
+    /// A cyclic permutation is a permutation that cyclicly maps a subset of the elements of a
+    /// set, while fixing the other elements in place. e.g the permutation created by
+    /// `Permutation::from_vec(vec![1, 2, 3, 0, 4])` is a cycle of the indices (0, 1, 2, 3) while
+    /// 4 is fixed in place.
+    ///
+    /// A cycle decomposition of a permutation is a set of disjoint cyclic permutations which,
+    /// when composed together, form the original permutation.
+    ///
+    /// Since a cycle is just a series of swaps, applying it to a collection is a matter of
+    /// swapping elements and so can be done in-place, and likewise for a composition of disjoint
+    /// cycles, which is why this decomposition is useful.
+    ///
+    /// For more information see https://groupprops.subwiki.org/wiki/Understanding_the_cycle_decomposition
+    ///
+    pub fn cyclic_decomposition(&self) -> Cycles {
+        // keep track of visited indices
+        let mut visited = vec![false; self.len()];
+
+        Cycles {
+            cycles: (0..self.len())
+                .filter_map(|i| {
+                    if !visited[i] {
+                        let mut current = i;
+                        let mut cycle = vec![current];
+
+                        loop {
+                            visited[current] = true;
+                            // follow the cycle
+                            current = self.indices[current];
+
+                            if current == i {
+                                break;
+                            }
+                            // cycles are disjoint
+                            debug_assert!(!visited[current]);
+
+                            cycle.push(current);
+                        }
+                        // if internal representation is reversed, cycles need to be reversed
+                        // accordingly (a reverse cycle is the inverse permutation)
+                        if self.inv {
+                            cycle.reverse()
+                        }
+                        Some(cycle)
+                    } else {
+                        None
+                    }
+                })
+                .collect(),
+        }
+    }
+
+    /// Apply the permutation in-place on a mutable slice of elements
+    ///
+    /// This uses the cycle decomposition of the permutation to determine which swaps are
+    /// needed in order to apply the permutation. As a result, when applying the same permutation
+    /// multiple times, it is recommended to convert the permutation to a `Cycles`
+    /// first (using `Cycles::from`).
+    ///
+    /// # Examples
+    ///
+    /// ``` # use permutations::Permutation;
+    /// let perm = Permutation::from_vec(vec![0,3,1,2]);
+    /// let mut vec = vec!['a', 'b', 'c', 'd'];
+    /// perm.apply(&mut vec);
+    /// assert_eq!(vec, &['a', 'c', 'd', 'b']);
+    /// ```
+    pub fn apply<T>(&self, vec: &mut [T]) {
+        self.cyclic_decomposition().apply(vec)
+    }
+
+    /// Apply the inverse permutation in-place on a mutable slice of elements
+    ///
+    /// Analogous to `apply_inv_slice`.
+    ///
+    /// This uses the cycle decomposition of the permutation to determine which swaps are
+    /// needed in order to apply the permutation. As a result, when applying the same permutation
+    /// multiple times, it is recommended to convert the permutation to a `Cycles`
+    /// first (using `Cycles::from`).
+    ///
+    /// # Examples
+    ///
+    /// ``` # use permutations::Permutation;
+    /// let perm = Permutation::from_vec(vec![0,3,1,2]);
+    /// let mut vec = vec!['a', 'b', 'c', 'd'];
+    /// perm.apply_inv(&mut vec);
+    /// assert_eq!(vec, &['a', 'd', 'b', 'c']);
+    /// ```
+    pub fn apply_inv<T>(&self, vec: &mut [T]) {
+        self.cyclic_decomposition().apply_inv(vec)
+    }
 }
+
+/// Represents a [cycle deomposition](https://en.wikipedia.org/wiki/Permutation#Cycle_notation] of a permutation.
+///
+/// Currently cannot be created directly; use `From<Permutation>` to convert a permutation to its
+/// corresponding cycle decomposition.
+#[derive(Clone, Debug)]
+pub struct Cycles {
+    cycles: Vec<Vec<usize>>,
+}
+
+impl<D: Deref<Target = Permutation>> From<D> for Cycles {
+    fn from(perm: D) -> Cycles {
+        perm.cyclic_decomposition()
+    }
+}
+
+impl From<Permutation> for Cycles {
+    fn from(perm: Permutation) -> Self {
+        (&perm).into()
+    }
+}
+
+impl<D: Deref<Target = Cycles>> From<D> for Permutation {
+    fn from(cycles: D) -> Self {
+        let mut perm = Permutation::one(cycles.len()).normalize(true);
+        cycles.apply(&mut perm.indices[..]);
+        perm
+    }
+}
+
+impl From<Cycles> for Permutation {
+    fn from(cycles: Cycles) -> Self {
+        (&cycles).into()
+    }
+}
+
+impl Cycles {
+    /// Use the cycle decomposition to apply the corresponding on a mutable slice.
+    ///
+    /// The permutation is appliedin-place using no more than `vec.len()` swaps.
+    /// Equivalent to `Permutation::apply`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use permutation::{Permutation, Cycles};
+    /// let perm = Cycles::from(Permutation::from_vec(vec![1, 3, 0, 4, 2, 5]));
+    ///
+    /// let mut vec = ["dog", "cow", "cat", "bird", "pig", "sheep"];
+    /// perm.apply(&mut vec);
+    /// assert_eq!(vec, ["cow", "bird", "dog", "pig", "cat", "sheep"]);
+    /// ```
+    pub fn apply<T>(&self, vec: &mut [T]) {
+        for cycle in self.cycles.iter() {
+            for pair in cycle.windows(2) {
+                vec.swap(pair[0], pair[1]);
+            }
+        }
+    }
+
+    /// Use the cycle decomposition to apply the inverse permutation on a mutable slice.
+    /// This is equivalent to "undoing" the permutation.
+    ///
+    /// The permutation is applied in-place using no more than `vec.len()` swaps.
+    /// Equivalent to `Permutation::apply_inv`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use permutation::{Permutation, Cycles};
+    /// let perm = Cycles::from(Permutation::from_vec(vec![1, 3, 0, 4, 2, 5]));
+    ///
+    /// let mut vec = ["dog", "cow", "cat", "bird", "pig", "sheep"];
+    /// perm.apply_inv(&mut vec);
+    /// assert_eq!(vec,["cat", "dog", "pig", "cow", "bird", "sheep"]);
+    /// ```
+    pub fn apply_inv<T>(&self, vec: &mut [T]) {
+        for cycle in self.cycles.iter().rev() {
+            for pair in cycle.windows(2).rev() {
+                vec.swap(pair[0], pair[1]);
+            }
+        }
+    }
+
+    /// Returns the size of the permutation represented by this decomposition.
+    ///
+    /// Equivalent to `Permutation::from(self).len()`.
+    pub fn len(&self) -> usize {
+        self.cycles
+            .iter()
+            .flatten()
+            .max()
+            .map(|&x| x + 1)
+            .unwrap_or(0)
+    }
+
+    /// Returns the decomposition of the inverse permutation.
+    ///
+    /// Equivalent to `Permutation::from(self).inverse().cyclic_decomposition()`, but more
+    /// efficient since computing the inverse decomposition is trivial.
+    pub fn inverse(&self) -> Cycles {
+        Cycles {
+            // reverse the order of cycles and the elements of each cycle
+            cycles: self
+                .cycles
+                .iter()
+                .rev()
+                .map(|x| x.iter().copied().rev().collect())
+                .collect(),
+        }
+    }
+
+    /// Apply the corresponding permutation to a slice of elements
+    ///
+    /// See `Permutation::apply_slice` for more information.
+    pub fn apply_slice<T: Clone, D>(&self, vec: D) -> Vec<T>
+    where
+        D: Deref<Target = [T]>,
+    {
+        let mut result = vec.to_vec();
+        self.apply(&mut result);
+        result
+    }
+
+    /// Apply the inverse of the corresponding permutation to a slice of elements
+    ///
+    /// See `Permutation::apply_inv_slice` for more information.
+    pub fn apply_inv_slice<T: Clone, D>(&self, vec: D) -> Vec<T>
+    where
+        D: Deref<Target = [T]>,
+    {
+        let mut result = vec.to_vec();
+        self.apply_inv(&mut result);
+        result
+    }
+}
+
 /// Return the permutation that would sort a given slice.
 ///
 /// This calculates the permutation that if it were applied to the slice,
@@ -331,8 +563,9 @@ impl Permutation {
 /// assert!(ordered_salaries == vec![5, 10, 15]);
 /// ```
 pub fn sort<T, D>(vec: D) -> Permutation
-    where T: Ord,
-          D: Deref<Target = [T]>
+where
+    T: Ord,
+    D: Deref<Target = [T]>,
 {
     let mut permutation = Permutation::one(vec.len());
     //We use the reverse permutation form, because its more efficient for applying to indices.
@@ -356,13 +589,16 @@ pub fn sort<T, D>(vec: D) -> Permutation
 /// assert!(vec == permuted);
 /// ```
 pub fn sort_by<T, D, F>(vec: D, mut compare: F) -> Permutation
-    where T: Ord,
-          D: Deref<Target = [T]>,
-          F: FnMut(&T, &T) -> Ordering
+where
+    T: Ord,
+    D: Deref<Target = [T]>,
+    F: FnMut(&T, &T) -> Ordering,
 {
     let mut permutation = Permutation::one(vec.len());
     //We use the reverse permutation form, because its more efficient for applying to indices.
-    permutation.indices.sort_by(|&i, &j| compare(&vec[i], &vec[j]));
+    permutation
+        .indices
+        .sort_by(|&i, &j| compare(&vec[i], &vec[j]));
     return permutation;
 }
 
@@ -382,9 +618,10 @@ pub fn sort_by<T, D, F>(vec: D, mut compare: F) -> Permutation
 /// assert!(vec == permuted);
 /// ```
 pub fn sort_by_key<T, D, B, F>(vec: D, mut f: F) -> Permutation
-    where B: Ord,
-          D: Deref<Target = [T]>,
-          F: FnMut(&T) -> B
+where
+    B: Ord,
+    D: Deref<Target = [T]>,
+    F: FnMut(&T) -> B,
 {
     let mut permutation = Permutation::one(vec.len());
     //We use the reverse permutation form, because its more efficient for applying to indices.
@@ -395,7 +632,7 @@ pub fn sort_by_key<T, D, B, F>(vec: D, mut f: F) -> Permutation
 #[cfg(test)]
 mod tests {
     use permutation;
-    use permutation::Permutation;
+    use permutation::{Cycles, Permutation};
 
     #[test]
     fn basics() {
@@ -452,10 +689,12 @@ mod tests {
         let p3 = Permutation::from_vec(vec![2, 0, 1, 4, 3]);
 
         check_not_equal_inverses(&p2, &p3);
-        println!("{:?}, {:?}, {:?}",
-                 p2.clone().inverse(),
-                 p3.clone().inverse(),
-                 &p2.clone().inverse() * &p3.clone().inverse());
+        println!(
+            "{:?}, {:?}, {:?}",
+            p2.clone().inverse(),
+            p3.clone().inverse(),
+            &p2.clone().inverse() * &p3.clone().inverse()
+        );
         assert!(&p2.clone().inverse() * &p3.clone().inverse() == Permutation::one(p2.len()));
 
         //An element, and a distinct element which is not its inverse.
@@ -485,15 +724,15 @@ mod tests {
         let perm = permutation::sort(&elems[..]);
         assert!(perm == Permutation::from_vec(vec![1, 3, 0, 4, 2, 5]));
 
-        assert!(perm.apply_slice(&elems[..]) ==
-                vec!["cat", "dog", "doggie", "doggies", "doggo", "god"]);
+        assert!(
+            perm.apply_slice(&elems[..]) == vec!["cat", "dog", "doggie", "doggies", "doggo", "god"]
+        );
         let parallel = vec!["doggie1", "cat1", "doggo1", "dog1", "doggies1", "god1"];
         let par_permuted = perm.apply_slice(&parallel[..]);
         println!("{:?}", par_permuted);
         assert!(par_permuted == vec!["cat1", "dog1", "doggie1", "doggies1", "doggo1", "god1"]);
         assert!(perm.apply_inv_slice(par_permuted) == parallel);
     }
-
 
     #[test]
     fn by_key() {
@@ -577,5 +816,54 @@ mod tests {
         p2 = p2.normalize(false);
         p3 = p3.normalize(true);
         check_not_equal_inverses(&p2, &p3);
+    }
+
+    #[test]
+    fn apply_inplace() {
+        let perm = Permutation::from_vec(vec![1, 3, 0, 4, 2, 5]);
+
+        let test1: Vec<_> = (0..perm.len()).collect();
+        let mut test2 = test1.clone();
+        perm.apply(&mut test2);
+        assert_eq!(perm.apply_slice(&test1[..]), test2);
+
+        let mut test3 = test1.clone();
+        perm.apply_inv(&mut test3);
+        assert_eq!(perm.apply_inv_slice(&test1[..]), test3);
+    }
+    #[test]
+    fn cycle_decomposition() {
+        let p1 = Permutation::from_vec(vec![2, 5, 0, 4, 3, 1]);
+        let cycle = Cycles::from(&p1);
+        assert_eq!(cycle.cycles, &[&[0, 2], &[1, 5], &[3, 4]]);
+        let perm = Permutation::from(cycle);
+        assert_eq!(perm, p1);
+
+        assert_eq!(Permutation::from(Cycles::from(&p1).inverse()), p1.inverse());
+
+        let p2 = Permutation::from_vec(vec![1, 3, 0, 4, 2, 5]);
+        let cycle = Cycles::from(&p2);
+        assert_eq!(p2, cycle.into());
+
+        assert_eq!(Permutation::from(Cycles::from(&p2).inverse()), p2.inverse());
+
+        let p3 = Permutation::from_vec(vec![
+            3, 7, 8, 4, 0, 10, 5, 12, 2, 15, 20, 9, 1, 13, 11, 18, 17, 16, 14, 6, 19,
+        ]);
+        println!("{:?}", p3);
+        let cycle = Cycles::from(p3);
+        println!("{:?}", cycle);
+        assert_eq!(
+            cycle.cycles,
+            vec![
+                vec![0, 3, 4],
+                vec![1, 7, 12],
+                vec![2, 8,],
+                vec![5, 10, 20, 19, 6],
+                vec![9, 15, 18, 14, 11],
+                vec![13],
+                vec![16, 17]
+            ]
+        );
     }
 }
