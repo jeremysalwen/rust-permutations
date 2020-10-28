@@ -343,7 +343,14 @@ pub fn sort<T, D>(vec: D) -> Permutation
 /// Return the permutation that would sort a given slice by a comparator.
 ///
 /// This is the same as `permutation::sort()` except that it allows you to specify
-/// the comparator to use when sorting similar to `std::slice.sort_by()`
+/// the comparator to use when sorting similar to `std::slice.sort_by()`.
+///
+/// If the comparator does not define a total ordering, the order of the elements is unspecified.
+/// Per the [Rust Docs](https://doc.rust-lang.org/std/vec/struct.Vec.html#method.sort_by),
+/// an order is a total order if it is (for all `a`, `b` and `c`):
+///
+/// * total and antisymmetric: exactly one of `a < b`, `a == b` or `a > b` is true, and
+/// * transitive, `a < b` and `b < c` implies `a < c`. The same must hold for both `==` and `>`.
 ///
 /// # Examples
 ///
