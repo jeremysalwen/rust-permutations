@@ -95,8 +95,8 @@ impl Permutation {
     }
     /// Computes the permutation that would sort a given slice.
     ///
-    /// This calculates the permutation that if it were applied to the slice,
-    /// would put the elements in sorted order.
+    /// This is the same as `permutation::sort()`, but assigned in-place to `self` rather than
+    /// allocating a new permutation.
     ///
     /// # Panics
     ///
@@ -106,27 +106,26 @@ impl Permutation {
     ///
     /// ```
     /// # use permutation::Permutation;
-    /// let mut vec = vec!['z','w','h','a','s','j'];
-    /// let mut permutation = permutation::Permutation::one(vec.len());
-    /// permutation.sort(&vec[..]);
+    /// // Say you have a permutation that we don't need anymore...
+    /// let mut permutation = permutation::sort(&[0,1,2][..]);
+    ///
+    /// // You can reuse it rather than allocating a new one, as long as the length is the same
+    /// let mut vec = vec!['z','w','h'];
+    /// permutation.assign_from_sort(&vec[..]);
     /// let permuted = permutation.apply_slice(&vec[..]);
     /// vec.sort();
     /// assert_eq!(vec, permuted);
-    /// ```
     ///
-    /// You can also use it to sort multiple arrays based on the ordering of one.
-    ///
-    /// ```
+    /// // You can also use it to sort multiple arrays based on the ordering of one.
     /// let names = vec!["Bob", "Steve", "Jane"];
     /// let salary = vec![10, 5, 15];
-    /// let mut permutation = permutation::Permutation::one(salary.len());
-    /// permutation.sort(&salary[..]);
+    /// permutation.assign_from_sort(&salary[..]);
     /// let ordered_names = permutation.apply_slice(&names[..]);
     /// let ordered_salaries = permutation.apply_slice(&salary[..]);
     /// assert_eq!(ordered_names, vec!["Steve", "Bob", "Jane"]);
     /// assert_eq!(ordered_salaries, vec![5, 10, 15]);
     /// ```
-    pub fn sort<T, D>(&mut self, vec: D)
+    pub fn assign_from_sort<T, D>(&mut self, vec: D)
     where
         T: Ord,
         D: Deref<Target = [T]>,
@@ -138,8 +137,8 @@ impl Permutation {
 
     /// Computes the permutation that would sort a given slice by a comparator.
     ///
-    /// This is the same as `permutation::sort()` except that it allows you to specify
-    /// the comparator to use when sorting similar to `std::slice.sort_by()`
+    /// This is the same as `permutation::sort_by()`, but assigned in-place to `self` rather than
+    /// allocating a new permutation.
     ///
     /// # Panics
     ///
@@ -149,14 +148,17 @@ impl Permutation {
     ///
     /// ```
     /// # use permutation::Permutation;
+    /// // Say you have a permutation that we don't need anymore...
+    /// let mut permutation = permutation::sort(&[0,1,2,3,4,5][..]);
+    ///
+    /// // You can assign to it rather than allocating a new one, as long as the length is the same
     /// let mut vec = vec!['z','w','h','a','s','j'];
-    /// let mut permutation = permutation::Permutation::one(vec.len());
-    /// permutation.sort_by(&vec[..], |a, b| b.cmp(a));
+    /// permutation.assign_from_sort_by(&vec[..], |a, b| b.cmp(a));
     /// let permuted = permutation.apply_slice(&vec[..]);
     /// vec.sort_by(|a,b| b.cmp(a));
     /// assert_eq!(vec, permuted);
     /// ```
-    pub fn sort_by<T, D, F>(&mut self, vec: D, mut compare: F)
+    pub fn assign_from_sort_by<T, D, F>(&mut self, vec: D, mut compare: F)
     where
         T: Ord,
         D: Deref<Target = [T]>,
@@ -169,8 +171,8 @@ impl Permutation {
 
     /// Computes the permutation that would sort a given slice by a key function.
     ///
-    /// This is the same as `permutation::sort()` except that it allows you to specify
-    /// the key function simliar to `std::slice.sort_by_key()`
+    /// This is the same as `permutation::sort_by_key()`, but assigned in-place to `self` rather than
+    /// allocating a new permutation.
     ///
     /// # Panics
     ///
@@ -180,14 +182,17 @@ impl Permutation {
     ///
     /// ```
     /// # use permutation::Permutation;
+    /// // Say you have a permutation that we don't need anymore...
+    /// let mut permutation = permutation::sort(&[0,1,2,3,4,5][..]);
+    ///
+    /// // You can assign to it rather than allocating a new one, as long as the length is the same
     /// let mut vec = vec![2, 4, 6, 8, 10, 11];
-    /// let mut permutation = permutation::Permutation::one(vec.len());
-    /// permutation.sort_by_key(&vec[..], |a| a % 3);
+    /// permutation.assign_from_sort_by_key(&vec[..], |a| a % 3);
     /// let permuted = permutation.apply_slice(&vec[..]);
     /// vec.sort_by_key(|a| a % 3);
     /// assert_eq!(vec, permuted);
     /// ```
-    pub fn sort_by_key<T, D, B, F>(&mut self, vec: D, mut f: F)
+    pub fn assign_from_sort_by_key<T, D, B, F>(&mut self, vec: D, mut f: F)
     where
         B: Ord,
         D: Deref<Target = [T]>,
