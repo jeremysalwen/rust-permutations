@@ -363,7 +363,7 @@ impl Permutation {
     // This way, we can recover the original indices in O(n) and perform no heap allocations.
 
     #[inline(always)]
-    fn mark_idx(idx: usize) -> usize {
+    fn toggle_mark_idx(idx: usize) -> usize {
         idx ^ isize::min_value() as usize
     }
 
@@ -373,8 +373,11 @@ impl Permutation {
     }
 
     fn apply_slice_bkwd_in_place<T>(&mut self, slice: &mut [T]) {
+        assert_eq!(slice.len(), self.len());
+        assert!(slice.len() <= isize::max_value() as usize);
+
         for idx in self.indices.iter() {
-            assert!(!Self::idx_is_marked(*idx));
+            debug_assert!(!Self::idx_is_marked(*idx));
         }
 
         for i in 0..self.indices.len() {
@@ -384,32 +387,58 @@ impl Permutation {
                 continue;
             }
 
-            if i_idx == i {
-                // For cycles of length 1, we don't perform any swaps
-                self.indices[i] = Self::mark_idx(i_idx);
-            } else {
-                // For all other cycles of length n, we need n swaps
-                let mut j = i;
-                let mut j_idx = i_idx;
-                'inner: loop {
-                    slice.swap(j, j_idx);
-                    self.indices[j] = Self::mark_idx(j_idx);
+            let mut j = i;
+            let mut j_idx = i_idx;
 
-                    j = j_idx;
-                    j_idx = self.indices[j];
-
-                    // When we loop back to the first index, we stop
-                    if j_idx == i {
-                        self.indices[j] = Self::mark_idx(j_idx);
-                        break 'inner;
-                    }
-                }
+            // When we loop back to the first index, we stop
+            while j_idx != i {
+                self.indices[j] = Self::toggle_mark_idx(j_idx);
+                slice.swap(j, j_idx);
+                j = j_idx;
+                j_idx = self.indices[j];
             }
+
+            self.indices[j] = Self::toggle_mark_idx(j_idx);
         }
 
         for idx in self.indices.iter_mut() {
-            assert!(Self::idx_is_marked(*idx));
-            *idx = Self::mark_idx(*idx);
+            debug_assert!(Self::idx_is_marked(*idx));
+            *idx = Self::toggle_mark_idx(*idx);
+        }
+    }
+
+    fn apply_slice_fwd_in_place<T>(&mut self, slice: &mut [T]) {
+        assert_eq!(slice.len(), self.len());
+        assert!(slice.len() <= isize::max_value() as usize);
+
+        for idx in self.indices.iter() {
+            debug_assert!(!Self::idx_is_marked(*idx));
+        }
+
+        for i in 0..self.indices.len() {
+            let i_idx = self.indices[i];
+
+            if Self::idx_is_marked(i_idx) {
+                continue;
+            }
+
+            let mut j = i;
+            let mut j_idx = i_idx;
+
+            // When we loop back to the first index, we stop
+            while j_idx != i {
+                self.indices[j] = Self::toggle_mark_idx(j_idx);
+                slice.swap(i, j_idx);
+                j = j_idx;
+                j_idx = self.indices[j];
+            }
+
+            self.indices[j] = Self::toggle_mark_idx(j_idx);
+        }
+
+        for idx in self.indices.iter_mut() {
+            debug_assert!(Self::idx_is_marked(*idx));
+            *idx = Self::toggle_mark_idx(*idx);
         }
     }
 
@@ -491,10 +520,9 @@ impl Permutation {
     /// assert_eq!(vec, vec!['a', 'd', 'b', 'c']);
     /// ```
     pub fn apply_slice_in_place<T>(&mut self, slice: &mut [T]) {
-        assert_eq!(slice.len(), self.len());
         match self.inv {
             false => self.apply_slice_bkwd_in_place(slice),
-            true => panic!("Permutation not normalized for backward application"),
+            true => self.apply_slice_fwd_in_place(slice),
         }
     }
 
@@ -523,11 +551,8 @@ impl Permutation {
     /// assert_eq!(vec, vec!['a', 'c', 'd', 'b']);
     /// ```
     pub fn apply_inv_slice_in_place<T>(&mut self, slice: &mut [T]) {
-        assert_eq!(slice.len(), self.len());
-        assert!(slice.len() <= isize::max_value() as usize);
-
         match self.inv {
-            false => panic!("Permutation not normalized for forward application"),
+            false => self.apply_slice_fwd_in_place(slice),
             true => self.apply_slice_bkwd_in_place(slice),
         }
     }
@@ -835,8 +860,8 @@ mod tests {
     }
 
     #[test]
-    fn apply_in_place() {
-        let mut p = Permutation::from_vec(vec![2, 0, 1, 4, 3]);
+    fn apply_unnorm_in_place() {
+        let mut p = Permutation::from_vec(vec![2, 0, 1, 4, 3]).normalize(false);
         let p_old = p.clone();
 
         let mut vec = vec!['a', 'b', 'c', 'd', 'e'];
@@ -849,7 +874,37 @@ mod tests {
     }
 
     #[test]
-    fn apply_inv_in_place() {
+    fn apply_norm_in_place() {
+        let mut p = Permutation::from_vec(vec![2, 0, 1, 4, 3]).normalize(true);
+        let p_old = p.clone();
+
+        let mut vec = vec!['a', 'b', 'c', 'd', 'e'];
+
+        p.apply_slice_in_place(vec.as_mut_slice());
+
+        assert_eq!(vec, vec!['c', 'a', 'b', 'e', 'd']);
+        assert_eq!(p.indices, p_old.indices);
+        assert_eq!(p.inv, p_old.inv);
+    }
+
+    #[test]
+    fn apply_inv_unnorm_place() {
+        let mut p = Permutation::from_vec(vec![2, 0, 1, 4, 3])
+            .inverse()
+            .normalize(false);
+        let p_old = p.clone();
+
+        let mut vec = vec!['c', 'a', 'b', 'e', 'd'];
+
+        p.apply_slice_in_place(vec.as_mut_slice());
+
+        assert_eq!(vec, vec!['a', 'b', 'c', 'd', 'e']);
+        assert_eq!(p.indices, p_old.indices);
+        assert_eq!(p.inv, p_old.inv);
+    }
+
+    #[test]
+    fn apply_inv_norm_in_place() {
         let mut p = Permutation::from_vec(vec![2, 0, 1, 4, 3])
             .inverse()
             .normalize(true);
