@@ -500,12 +500,8 @@ impl Permutation {
     /// This method borrows `self` mutably to avoid allocations, but the permutation
     /// will be unchanged after it returns.
     ///
-    /// Note that unlike the other `apply_*` methods, this method *requires* the permutation
-    /// to be normalized in the opposite direction, or it will panic.
-    ///
     /// # Panics
     ///
-    /// If the permutation is not normalized for backward application.
     /// If `slice.len() != self.len()`.
     /// If `slice.len()` > isize::max_value(), due to implementation reasons.
     ///
@@ -528,7 +524,7 @@ impl Permutation {
 
     /// Apply the inverse of a permutation to a slice of elements
     ///
-    /// Given a slice of elements, this will permute the elements in placeaccording
+    /// Given a slice of elements, this will permute the elements in place according
     /// to the inverse of this permutation.
     /// This is equivalent to "undoing" the permutation.
     ///
@@ -537,7 +533,6 @@ impl Permutation {
     ///
     /// # Panics
     ///
-    /// If the permutation is not normalized for forward application.
     /// If `slice.len() != self.len()`.
     /// If `slice.len()` > isize::max_value(), due to implementation reasons.
     ///
