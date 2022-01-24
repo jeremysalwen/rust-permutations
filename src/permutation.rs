@@ -1,25 +1,6 @@
-/*
-Rust permutations library
-
-Copyright (C) 2017  Jeremy Salwen
-
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with this program.  If not, see <http://www.gnu.org/licenses/>.
-*/
-
 use std;
 use std::cmp::Ordering;
-use std::ops::Deref;
+use std::convert::AsRef;
 
 #[derive(Clone, Debug)]
 pub struct Permutation {
@@ -52,18 +33,18 @@ impl<'a, 'b> std::ops::Mul<&'b Permutation> for &'a Permutation {
     ///
     /// ```
     /// # use permutation::Permutation;
-    /// let p1 = Permutation::from_vec(vec![1, 0, 2]);
-    /// let p2 = Permutation::from_vec(vec![0, 2, 1]);
-    /// assert_eq!(&p1 * &p2, Permutation::from_vec(vec![2,0,1]));
+    /// let p1 = Permutation::from_vec([1, 0, 2]);
+    /// let p2 = Permutation::from_vec([0, 2, 1]);
+    /// assert_eq!(&p1 * &p2, Permutation::from_vec([2,0,1]));
     /// ```
 
     fn mul(self, rhs: &'b Permutation) -> Self::Output {
         match (self.inv, rhs.inv) {
-            (_, false) => Permutation::from_vec(self.apply_slice(&rhs.indices[..])),
+            (_, false) => Permutation::from_vec(self.apply_slice(&rhs.indices)),
             (false, true) => return self * &(rhs * &Permutation::one(self.len())),
             (true, true) => Permutation {
                 inv: true,
-                indices: rhs.apply_inv_slice(&self.indices[..]),
+                indices: rhs.apply_inv_slice(&self.indices),
             },
         }
     }
@@ -81,13 +62,16 @@ impl Permutation {
     /// ```
     /// # use permutation::Permutation;
     /// let vec = vec!['a','b','c','d'];
-    /// let permutation = Permutation::from_vec(vec![0,2,3,1]);
-    /// assert_eq!(permutation.apply_slice(&vec[..]), vec!['a','c','d','b']);
+    /// let permutation = Permutation::from_vec([0,2,3,1]);
+    /// assert_eq!(permutation.apply_slice(&vec), vec!['a','c','d','b']);
     /// ```
-    pub fn from_vec(vec: Vec<usize>) -> Permutation {
+    pub fn from_vec<V>(vec: V) -> Permutation
+    where
+        V: Into<Vec<usize>>,
+    {
         let result = Permutation {
             inv: false,
-            indices: vec,
+            indices: vec.into(),
         };
 
         debug_assert!(result.valid());
@@ -107,32 +91,33 @@ impl Permutation {
     /// ```
     /// # use permutation::Permutation;
     /// // Say you have a permutation that we don't need anymore...
-    /// let mut permutation = permutation::sort(&[0,1,2][..]);
+    /// let mut permutation = permutation::sort(&[0,1,2]);
     ///
     /// // You can reuse it rather than allocating a new one, as long as the length is the same
     /// let mut vec = vec!['z','w','h'];
-    /// permutation.assign_from_sort(&vec[..]);
-    /// let permuted = permutation.apply_slice(&vec[..]);
+    /// permutation.assign_from_sort(&vec);
+    /// let permuted = permutation.apply_slice(&vec);
     /// vec.sort();
     /// assert_eq!(vec, permuted);
     ///
     /// // You can also use it to sort multiple arrays based on the ordering of one.
     /// let names = vec!["Bob", "Steve", "Jane"];
     /// let salary = vec![10, 5, 15];
-    /// permutation.assign_from_sort(&salary[..]);
-    /// let ordered_names = permutation.apply_slice(&names[..]);
-    /// let ordered_salaries = permutation.apply_slice(&salary[..]);
+    /// permutation.assign_from_sort(&salary);
+    /// let ordered_names = permutation.apply_slice(&names);
+    /// let ordered_salaries = permutation.apply_slice(&salary);
     /// assert_eq!(ordered_names, vec!["Steve", "Bob", "Jane"]);
     /// assert_eq!(ordered_salaries, vec![5, 10, 15]);
     /// ```
-    pub fn assign_from_sort<T, D>(&mut self, vec: D)
+    pub fn assign_from_sort<T, S>(&mut self, slice: S)
     where
         T: Ord,
-        D: Deref<Target = [T]>,
+        S: AsRef<[T]>,
     {
-        assert_eq!(self.len(), vec.len());
+        let s = slice.as_ref();
+        assert_eq!(self.len(), s.len());
         //We use the reverse permutation form, because its more efficient for applying to indices.
-        self.indices.sort_by_key(|&i| &vec[i]);
+        self.indices.sort_by_key(|&i| &s[i]);
     }
 
     /// Computes the permutation that would sort a given slice by a comparator.
@@ -149,23 +134,24 @@ impl Permutation {
     /// ```
     /// # use permutation::Permutation;
     /// // Say you have a permutation that we don't need anymore...
-    /// let mut permutation = permutation::sort(&[0,1,2,3,4,5][..]);
+    /// let mut permutation = permutation::sort(&[0,1,2,3,4,5]);
     ///
     /// // You can assign to it rather than allocating a new one, as long as the length is the same
     /// let mut vec = vec!['z','w','h','a','s','j'];
-    /// permutation.assign_from_sort_by(&vec[..], |a, b| b.cmp(a));
-    /// let permuted = permutation.apply_slice(&vec[..]);
+    /// permutation.assign_from_sort_by(&vec, |a, b| b.cmp(a));
+    /// let permuted = permutation.apply_slice(&vec);
     /// vec.sort_by(|a,b| b.cmp(a));
     /// assert_eq!(vec, permuted);
     /// ```
-    pub fn assign_from_sort_by<T, D, F>(&mut self, vec: D, mut compare: F)
+    pub fn assign_from_sort_by<T, S, F>(&mut self, slice: S, mut compare: F)
     where
-        D: Deref<Target = [T]>,
+        S: AsRef<[T]>,
         F: FnMut(&T, &T) -> Ordering,
     {
-        assert_eq!(self.indices.len(), vec.len());
-        //We use the reverse permutation form, because its more efficient for applying to indices.
-        self.indices.sort_by(|&i, &j| compare(&vec[i], &vec[j]));
+        let s = slice.as_ref();
+        assert_eq!(self.indices.len(), s.len());
+        // We use the reverse permutation form, because its more efficient for applying to indices.
+        self.indices.sort_by(|&i, &j| compare(&s[i], &s[j]));
     }
 
     /// Computes the permutation that would sort a given slice by a key function.
@@ -182,24 +168,25 @@ impl Permutation {
     /// ```
     /// # use permutation::Permutation;
     /// // Say you have a permutation that we don't need anymore...
-    /// let mut permutation = permutation::sort(&[0,1,2,3,4,5][..]);
+    /// let mut permutation = permutation::sort(&[0,1,2,3,4,5]);
     ///
     /// // You can assign to it rather than allocating a new one, as long as the length is the same
     /// let mut vec = vec![2, 4, 6, 8, 10, 11];
-    /// permutation.assign_from_sort_by_key(&vec[..], |a| a % 3);
-    /// let permuted = permutation.apply_slice(&vec[..]);
+    /// permutation.assign_from_sort_by_key(&vec, |a| a % 3);
+    /// let permuted = permutation.apply_slice(&vec);
     /// vec.sort_by_key(|a| a % 3);
     /// assert_eq!(vec, permuted);
     /// ```
-    pub fn assign_from_sort_by_key<T, D, B, F>(&mut self, vec: D, mut f: F)
+    pub fn assign_from_sort_by_key<T, S, B, F>(&mut self, slice: S, mut f: F)
     where
         B: Ord,
-        D: Deref<Target = [T]>,
+        S: AsRef<[T]>,
         F: FnMut(&T) -> B,
     {
-        assert_eq!(self.indices.len(), vec.len());
+        let s = slice.as_ref();
+        assert_eq!(self.indices.len(), s.len());
         //We use the reverse permutation form, because its more efficient for applying to indices.
-        self.indices.sort_by_key(|&i| f(&vec[i]));
+        self.indices.sort_by_key(|&i| f(&s[i]));
     }
     /// Return the identity permutation of size N.
     ///
@@ -210,7 +197,7 @@ impl Permutation {
     /// # use permutation::Permutation;
     /// let vec = vec!['a','b','c','d'];
     /// let permutation = Permutation::one(4);
-    /// assert_eq!(permutation.apply_slice(&vec[..]), vec!['a','b','c','d']);
+    /// assert_eq!(permutation.apply_slice(&vec), vec!['a','b','c','d']);
     /// ```
     pub fn one(len: usize) -> Permutation {
         Permutation {
@@ -250,8 +237,8 @@ impl Permutation {
     ///
     /// ```
     /// # use permutation::Permutation;
-    /// let permutation = Permutation::from_vec(vec![0,2,3,1]);
-    /// assert_eq!(permutation.inverse(), Permutation::from_vec(vec![0,3,1,2]));
+    /// let permutation = Permutation::from_vec([0,2,3,1]);
+    /// assert_eq!(permutation.inverse(), Permutation::from_vec([0,3,1,2]));
     /// ```
     pub fn inverse(mut self) -> Permutation {
         self.inv ^= true;
@@ -276,7 +263,7 @@ impl Permutation {
     ///
     /// ```
     /// # use permutation::Permutation;
-    /// let permutation = Permutation::from_vec(vec![0, 3, 2, 5, 1, 4]);
+    /// let permutation = Permutation::from_vec([0, 3, 2, 5, 1, 4]);
     /// let reversed = permutation.inverse().normalize(true);
     /// assert_eq!(reversed.apply_inv_idx(3), 1);
     /// ```
@@ -311,7 +298,7 @@ impl Permutation {
     ///
     /// ```
     /// # use permutation::Permutation;
-    /// let permutation = Permutation::from_vec(vec![0,2,1]);
+    /// let permutation = Permutation::from_vec([0,2,1]);
     /// assert_eq!(permutation.apply_idx(2), 1);
     pub fn apply_idx(&self, idx: usize) -> usize {
         match self.inv {
@@ -331,7 +318,7 @@ impl Permutation {
     ///
     /// ```
     /// # use permutation::Permutation;
-    /// let permutation = Permutation::from_vec(vec![0,2,1]);
+    /// let permutation = Permutation::from_vec([0,2,1]);
     /// assert_eq!(permutation.apply_inv_idx(1), 2);
     /// ```
     pub fn apply_inv_idx(&self, idx: usize) -> usize {
@@ -340,20 +327,22 @@ impl Permutation {
             false => self.apply_idx_bkwd(idx),
         }
     }
-    fn apply_slice_fwd<T: Clone, D>(&self, vec: D) -> Vec<T>
+    fn apply_slice_fwd<T: Clone, S>(&self, slice: S) -> Vec<T>
     where
-        D: Deref<Target = [T]>,
+        S: AsRef<[T]>,
     {
-        self.indices.iter().map(|&idx| vec[idx].clone()).collect()
+        let s = slice.as_ref();
+        self.indices.iter().map(|&idx| s[idx].clone()).collect()
     }
 
-    fn apply_slice_bkwd<T: Clone, D>(&self, vec: D) -> Vec<T>
+    fn apply_slice_bkwd<T: Clone, S>(&self, slice: S) -> Vec<T>
     where
-        D: Deref<Target = [T]>,
+        S: AsRef<[T]>,
     {
-        let mut other: Vec<T> = vec.to_vec();
+        let s = slice.as_ref();
+        let mut other: Vec<T> = s.to_vec();
         for (i, idx) in self.indices.iter().enumerate() {
-            other[*idx] = vec[i].clone();
+            other[*idx] = s[i].clone();
         }
         return other;
     }
@@ -372,9 +361,13 @@ impl Permutation {
         (idx & (isize::min_value() as usize)) != 0
     }
 
-    fn apply_slice_bkwd_in_place<T>(&mut self, slice: &mut [T]) {
-        assert_eq!(slice.len(), self.len());
-        assert!(slice.len() <= isize::max_value() as usize);
+    fn apply_slice_bkwd_in_place<T, S>(&mut self, slice: &mut S)
+    where
+        S: AsMut<[T]>,
+    {
+        let s = slice.as_mut();
+        assert_eq!(s.len(), self.len());
+        assert!(s.len() <= isize::max_value() as usize);
 
         for idx in self.indices.iter() {
             debug_assert!(!Self::idx_is_marked(*idx));
@@ -393,7 +386,7 @@ impl Permutation {
             // When we loop back to the first index, we stop
             while j_idx != i {
                 self.indices[j] = Self::toggle_mark_idx(j_idx);
-                slice.swap(j, j_idx);
+                s.swap(j, j_idx);
                 j = j_idx;
                 j_idx = self.indices[j];
             }
@@ -407,9 +400,13 @@ impl Permutation {
         }
     }
 
-    fn apply_slice_fwd_in_place<T>(&mut self, slice: &mut [T]) {
-        assert_eq!(slice.len(), self.len());
-        assert!(slice.len() <= isize::max_value() as usize);
+    fn apply_slice_fwd_in_place<T, S>(&mut self, slice: &mut S)
+    where
+        S: AsMut<[T]>,
+    {
+        let s = slice.as_mut();
+        assert_eq!(s.len(), self.len());
+        assert!(s.len() <= isize::max_value() as usize);
 
         for idx in self.indices.iter() {
             debug_assert!(!Self::idx_is_marked(*idx));
@@ -428,7 +425,7 @@ impl Permutation {
             // When we loop back to the first index, we stop
             while j_idx != i {
                 self.indices[j] = Self::toggle_mark_idx(j_idx);
-                slice.swap(i, j_idx);
+                s.swap(i, j_idx);
                 j = j_idx;
                 j_idx = self.indices[j];
             }
@@ -451,19 +448,20 @@ impl Permutation {
     ///
     /// ```
     /// # use permutation::Permutation;
-    /// let permutation = Permutation::from_vec(vec![0,3,1,2]);
+    /// let permutation = Permutation::from_vec([0,3,1,2]);
     /// let vec = vec!['a','b','c','d'];
-    /// assert_eq!(permutation.apply_slice(&vec[..]), vec!['a', 'd', 'b', 'c']);
+    /// assert_eq!(permutation.apply_slice(&vec), vec!['a', 'd', 'b', 'c']);
     /// ```
     #[must_use]
-    pub fn apply_slice<T: Clone, D>(&self, vec: D) -> Vec<T>
+    pub fn apply_slice<T: Clone, S>(&self, slice: S) -> Vec<T>
     where
-        D: Deref<Target = [T]>,
+        S: AsRef<[T]>,
     {
-        assert_eq!(vec.len(), self.len());
+        let s = slice.as_ref();
+        assert_eq!(s.len(), self.len());
         match self.inv {
-            false => self.apply_slice_fwd(vec),
-            true => self.apply_slice_bkwd(vec),
+            false => self.apply_slice_fwd(s),
+            true => self.apply_slice_bkwd(s),
         }
     }
     /// Apply the inverse of a permutation to a slice of elements
@@ -476,19 +474,20 @@ impl Permutation {
     ///
     /// ```
     /// # use permutation::Permutation;
-    /// let permutation = Permutation::from_vec(vec![0,3,1,2]);
+    /// let permutation = Permutation::from_vec([0,3,1,2]);
     /// let vec = vec!['a','b', 'c', 'd'];
     /// assert_eq!(permutation.apply_inv_slice(vec), vec!['a', 'c', 'd', 'b']);
     /// ```
     #[must_use]
-    pub fn apply_inv_slice<T: Clone, D>(&self, vec: D) -> Vec<T>
+    pub fn apply_inv_slice<T: Clone, S>(&self, slice: S) -> Vec<T>
     where
-        D: Deref<Target = [T]>,
+        S: AsRef<[T]>,
     {
-        assert_eq!(vec.len(), self.len());
+        let s = slice.as_ref();
+        assert_eq!(s.len(), self.len());
         match self.inv {
-            false => self.apply_slice_bkwd(vec),
-            true => self.apply_slice_fwd(vec),
+            false => self.apply_slice_bkwd(s),
+            true => self.apply_slice_fwd(s),
         }
     }
 
@@ -509,13 +508,16 @@ impl Permutation {
     ///
     /// ```
     /// # use permutation::Permutation;
-    /// let mut permutation = Permutation::from_vec(vec![0,3,1,2]);
+    /// let mut permutation = Permutation::from_vec([0,3,1,2]);
     /// let mut vec = vec!['a', 'b', 'c', 'd'];
     /// let permutation_old = permutation.clone();
-    /// permutation.apply_slice_in_place(vec.as_mut_slice());
+    /// permutation.apply_slice_in_place(&mut vec);
     /// assert_eq!(vec, vec!['a', 'd', 'b', 'c']);
     /// ```
-    pub fn apply_slice_in_place<T>(&mut self, slice: &mut [T]) {
+    pub fn apply_slice_in_place<T, S>(&mut self, slice: &mut S)
+    where
+        S: AsMut<[T]>,
+    {
         match self.inv {
             false => self.apply_slice_bkwd_in_place(slice),
             true => self.apply_slice_fwd_in_place(slice),
@@ -540,12 +542,15 @@ impl Permutation {
     ///
     /// ```
     /// # use permutation::Permutation;
-    /// let mut permutation = Permutation::from_vec(vec![0,3,1,2]).normalize(false);
+    /// let mut permutation = Permutation::from_vec([0,3,1,2]).normalize(false);
     /// let mut vec = vec!['a', 'b', 'c', 'd'];
-    /// permutation.apply_inv_slice_in_place(vec.as_mut_slice());
+    /// permutation.apply_inv_slice_in_place(&mut vec);
     /// assert_eq!(vec, vec!['a', 'c', 'd', 'b']);
     /// ```
-    pub fn apply_inv_slice_in_place<T>(&mut self, slice: &mut [T]) {
+    pub fn apply_inv_slice_in_place<T, S>(&mut self, slice: &mut S)
+    where
+        S: AsMut<[T]>,
+    {
         match self.inv {
             false => self.apply_slice_fwd_in_place(slice),
             true => self.apply_slice_bkwd_in_place(slice),
@@ -562,8 +567,8 @@ impl Permutation {
 /// ```
 /// # use permutation::Permutation;
 /// let mut vec = vec!['z','w','h','a','s','j'];
-/// let permutation = permutation::sort(&vec[..]);
-/// let permuted = permutation.apply_slice(&vec[..]);
+/// let permutation = permutation::sort(&vec);
+/// let permuted = permutation.apply_slice(&vec);
 /// vec.sort();
 /// assert_eq!(vec, permuted);
 /// ```
@@ -573,20 +578,21 @@ impl Permutation {
 /// ```
 /// let names = vec!["Bob", "Steve", "Jane"];
 /// let salary = vec![10, 5, 15];
-/// let permutation = permutation::sort(&salary[..]);
-/// let ordered_names = permutation.apply_slice(&names[..]);
-/// let ordered_salaries = permutation.apply_slice(&salary[..]);
+/// let permutation = permutation::sort(&salary);
+/// let ordered_names = permutation.apply_slice(&names);
+/// let ordered_salaries = permutation.apply_slice(&salary);
 /// assert_eq!(ordered_names, vec!["Steve", "Bob", "Jane"]);
 /// assert_eq!(ordered_salaries, vec![5, 10, 15]);
 /// ```
-pub fn sort<T, D>(vec: D) -> Permutation
+pub fn sort<T, S>(slice: S) -> Permutation
 where
     T: Ord,
-    D: Deref<Target = [T]>,
+    S: AsRef<[T]>,
 {
-    let mut permutation = Permutation::one(vec.len());
+    let s = slice.as_ref();
+    let mut permutation = Permutation::one(s.len());
     //We use the reverse permutation form, because its more efficient for applying to indices.
-    permutation.indices.sort_by_key(|&i| &vec[i]);
+    permutation.indices.sort_by_key(|&i| &s[i]);
     return permutation;
 }
 
@@ -607,21 +613,20 @@ where
 /// ```
 /// # use permutation::Permutation;
 /// let mut vec = vec!['z','w','h','a','s','j'];
-/// let permutation = permutation::sort_by(&vec[..], |a, b| b.cmp(a));
-/// let permuted = permutation.apply_slice(&vec[..]);
+/// let permutation = permutation::sort_by(&vec, |a, b| b.cmp(a));
+/// let permuted = permutation.apply_slice(&vec);
 /// vec.sort_by(|a,b| b.cmp(a));
 /// assert_eq!(vec, permuted);
 /// ```
-pub fn sort_by<T, D, F>(vec: D, mut compare: F) -> Permutation
+pub fn sort_by<T, S, F>(slice: S, mut compare: F) -> Permutation
 where
-    D: Deref<Target = [T]>,
+    S: AsRef<[T]>,
     F: FnMut(&T, &T) -> Ordering,
 {
-    let mut permutation = Permutation::one(vec.len());
+    let s = slice.as_ref();
+    let mut permutation = Permutation::one(s.len());
     //We use the reverse permutation form, because its more efficient for applying to indices.
-    permutation
-        .indices
-        .sort_by(|&i, &j| compare(&vec[i], &vec[j]));
+    permutation.indices.sort_by(|&i, &j| compare(&s[i], &s[j]));
     return permutation;
 }
 
@@ -635,20 +640,21 @@ where
 /// ```
 /// # use permutation::Permutation;
 /// let mut vec = vec![2, 4, 6, 8, 10, 11];
-/// let permutation = permutation::sort_by_key(&vec[..], |a| a % 3);
-/// let permuted = permutation.apply_slice(&vec[..]);
+/// let permutation = permutation::sort_by_key(&vec, |a| a % 3);
+/// let permuted = permutation.apply_slice(&vec);
 /// vec.sort_by_key(|a| a % 3);
 /// assert_eq!(vec, permuted);
 /// ```
-pub fn sort_by_key<T, D, B, F>(vec: D, mut f: F) -> Permutation
+pub fn sort_by_key<T, S, B, F>(slice: S, mut f: F) -> Permutation
 where
     B: Ord,
-    D: Deref<Target = [T]>,
+    S: AsRef<[T]>,
     F: FnMut(&T) -> B,
 {
-    let mut permutation = Permutation::one(vec.len());
+    let s = slice.as_ref();
+    let mut permutation = Permutation::one(s.len());
     //We use the reverse permutation form, because its more efficient for applying to indices.
-    permutation.indices.sort_by_key(|&i| f(&vec[i]));
+    permutation.indices.sort_by_key(|&i| f(&s[i]));
     return permutation;
 }
 
@@ -671,9 +677,26 @@ mod tests {
     }
 
     #[test]
+    fn from_vec() {
+        let p = Permutation::from_vec(vec![0, 1, 2]);
+        assert!(p.valid());
+    }
+    #[test]
+    fn from_vec_slice() {
+        let v = vec![0, 1, 2];
+        let p = Permutation::from_vec(&v[..]);
+        assert!(p.valid());
+    }
+    #[test]
+    fn from_vec_array() {
+        let p = Permutation::from_vec([0, 1, 2]);
+        assert!(p.valid());
+    }
+
+    #[test]
     fn powers() {
         let id = Permutation::one(3);
-        let p1 = Permutation::from_vec(vec![1, 0, 2]);
+        let p1 = Permutation::from_vec([1, 0, 2]);
         let square = &p1 * &p1;
         assert_eq!(square, id);
         let cube = &p1 * &square;
@@ -681,14 +704,14 @@ mod tests {
     }
     #[test]
     fn prod() {
-        let p1 = Permutation::from_vec(vec![1, 0, 2]);
-        let p2 = Permutation::from_vec(vec![0, 2, 1]);
+        let p1 = Permutation::from_vec([1, 0, 2]);
+        let p2 = Permutation::from_vec([0, 2, 1]);
         let prod = &p1 * &p2;
-        assert_eq!(prod, Permutation::from_vec(vec![2, 0, 1]));
+        assert_eq!(prod, Permutation::from_vec([2, 0, 1]));
     }
     #[test]
     fn len() {
-        let p1 = Permutation::from_vec(vec![1, 0, 2]);
+        let p1 = Permutation::from_vec([1, 0, 2]);
         assert_eq!(p1.len(), 3)
     }
     fn check_not_equal_inverses(p2: &Permutation, p3: &Permutation) {
@@ -703,13 +726,13 @@ mod tests {
     }
     #[test]
     fn inverse() {
-        let p1 = Permutation::from_vec(vec![1, 0, 2]);
+        let p1 = Permutation::from_vec([1, 0, 2]);
         let rev = p1.clone().inverse();
         assert_eq!(p1, rev);
 
         //An element and its inverse
-        let p2 = Permutation::from_vec(vec![1, 2, 0, 4, 3]);
-        let p3 = Permutation::from_vec(vec![2, 0, 1, 4, 3]);
+        let p2 = Permutation::from_vec([1, 2, 0, 4, 3]);
+        let p3 = Permutation::from_vec([2, 0, 1, 4, 3]);
 
         check_not_equal_inverses(&p2, &p3);
         println!(
@@ -724,8 +747,8 @@ mod tests {
         );
 
         //An element, and a distinct element which is not its inverse.
-        let p4 = Permutation::from_vec(vec![1, 2, 0, 3, 4]);
-        let p5 = Permutation::from_vec(vec![2, 0, 1, 4, 3]);
+        let p4 = Permutation::from_vec([1, 2, 0, 3, 4]);
+        let p5 = Permutation::from_vec([2, 0, 1, 4, 3]);
 
         assert!(p4 != p5);
         assert!(p4 != p5.clone().inverse());
@@ -738,56 +761,75 @@ mod tests {
     }
 
     #[test]
-    fn sorting() {
-        let elems = vec!['a', 'b', 'e', 'g', 'f'];
+    fn sort_slice() {
+        let elems = ['a', 'b', 'e', 'g', 'f'];
         let perm = permutation::sort(&elems[..]);
         println!("{:?}", perm);
-        assert_eq!(perm, Permutation::from_vec(vec![0, 1, 2, 4, 3]));
+        assert_eq!(perm, Permutation::from_vec([0, 1, 2, 4, 3]));
+    }
+    #[test]
+    fn sort_array() {
+        let elems = ['a', 'b', 'e', 'g', 'f'];
+        permutation::sort(elems);
+    }
+    #[test]
+    fn sort_array_ref() {
+        let elems = ['a', 'b', 'e', 'g', 'f'];
+        permutation::sort(&elems);
+    }
+    #[test]
+    fn sort_vec() {
+        let elems = vec!['a', 'b', 'e', 'g', 'f'];
+        permutation::sort(&elems);
     }
     #[test]
     fn strings() {
-        let elems = vec!["doggie", "cat", "doggo", "dog", "doggies", "god"];
-        let perm = permutation::sort(&elems[..]);
-        assert_eq!(perm, Permutation::from_vec(vec![1, 3, 0, 4, 2, 5]));
+        let elems = ["doggie", "cat", "doggo", "dog", "doggies", "god"];
+        let perm = permutation::sort(&elems);
+        assert_eq!(perm, Permutation::from_vec([1, 3, 0, 4, 2, 5]));
 
-        assert!(
-            perm.apply_slice(&elems[..]) == vec!["cat", "dog", "doggie", "doggies", "doggo", "god"]
-        );
-        let parallel = vec!["doggie1", "cat1", "doggo1", "dog1", "doggies1", "god1"];
-        let par_permuted = perm.apply_slice(&parallel[..]);
+        assert!(perm.apply_slice(&elems) == ["cat", "dog", "doggie", "doggies", "doggo", "god"]);
+        let parallel = ["doggie1", "cat1", "doggo1", "dog1", "doggies1", "god1"];
+        let par_permuted = perm.apply_slice(&parallel);
         println!("{:?}", par_permuted);
         assert_eq!(
             par_permuted,
-            vec!["cat1", "dog1", "doggie1", "doggies1", "doggo1", "god1"]
+            ["cat1", "dog1", "doggie1", "doggies1", "doggo1", "god1"]
         );
         assert_eq!(perm.apply_inv_slice(par_permuted), parallel);
     }
 
     #[test]
     fn by_key() {
-        let vec = vec![1, 10, 9, 8];
-        let perm = permutation::sort_by_key(vec, |i| -i);
-        assert_eq!(perm, Permutation::from_vec(vec![1, 2, 3, 0]));
+        let arr = [1, 10, 9, 8];
+        let perm = permutation::sort_by_key(arr, |i| -i);
+        assert_eq!(perm, Permutation::from_vec([1, 2, 3, 0]));
     }
 
     #[test]
     fn by_cmp() {
-        let vec = vec!["aaabaab", "aba", "cas", "aaab"];
-        let perm = permutation::sort_by(vec, |a, b| a.cmp(b));
-        assert_eq!(perm, Permutation::from_vec(vec![3, 0, 1, 2]));
+        let arr = ["aaabaab", "aba", "cas", "aaab"];
+        let perm = permutation::sort_by(arr, |a, b| a.cmp(b));
+        assert_eq!(perm, Permutation::from_vec([3, 0, 1, 2]));
     }
 
     #[test]
     fn by_partially_ordered_cmp() {
-        let vec = vec![1.0, 5.0, 3.0, 2.0, 8.0];
-        let perm = permutation::sort_by(vec, |a, b| a.partial_cmp(b).unwrap());
-        assert!(perm == Permutation::from_vec(vec![0, 3, 2, 1, 4]));
+        let arr = [1.0, 5.0, 3.0, 2.0, 8.0];
+        let perm = permutation::sort_by(arr, |a, b| a.partial_cmp(b).unwrap());
+        assert!(perm == Permutation::from_vec([0, 3, 2, 1, 4]));
     }
 
     #[test]
+    fn apply_array() {
+        let arr = [1, 10, 9, 8];
+        let perm = permutation::sort_by_key(arr, |i| -i);
+        assert_eq!(perm, Permutation::from_vec([1, 2, 3, 0]));
+    }
+    #[test]
     fn indices() {
-        let vec = vec![100, 10, 1, 1000];
-        let perm = permutation::sort_by_key(vec, |x| -x);
+        let arr = [100, 10, 1, 1000];
+        let perm = permutation::sort_by_key(arr, |x| -x);
         println!("{:?}", perm.apply_inv_idx(0));
         assert_eq!(perm.apply_inv_idx(0), 3);
         assert_eq!(perm.apply_idx(3), 0);
@@ -803,8 +845,8 @@ mod tests {
     }
     #[test]
     fn normalize() {
-        let vec = vec![100, 10, 1, 1000];
-        let perm = permutation::sort_by_key(vec, |x| -x);
+        let arr = [100, 10, 1, 1000];
+        let perm = permutation::sort_by_key(arr, |x| -x);
         let f = perm.clone().normalize(false);
         let b = perm.clone().normalize(true);
         assert_eq!(perm, f);
@@ -829,13 +871,13 @@ mod tests {
     }
     #[test]
     fn normalize_inv() {
-        let p1 = Permutation::from_vec(vec![1, 0, 2]);
+        let p1 = Permutation::from_vec([1, 0, 2]);
         let rev = p1.clone().inverse();
         assert_eq!(p1, rev);
 
         //An element and its inverse
-        let mut p2 = Permutation::from_vec(vec![1, 2, 0, 4, 3]);
-        let mut p3 = Permutation::from_vec(vec![2, 0, 1, 4, 3]);
+        let mut p2 = Permutation::from_vec([1, 2, 0, 4, 3]);
+        let mut p3 = Permutation::from_vec([2, 0, 1, 4, 3]);
 
         p2 = p2.normalize(false);
         p3 = p3.normalize(false);
@@ -855,61 +897,71 @@ mod tests {
     }
 
     #[test]
-    fn apply_unnorm_in_place() {
-        let mut p = Permutation::from_vec(vec![2, 0, 1, 4, 3]).normalize(false);
-        let p_old = p.clone();
+    fn apply_slice_in_place_vec() {
+        let mut p = Permutation::from_vec([2, 0, 1, 4, 3]);
 
         let mut vec = vec!['a', 'b', 'c', 'd', 'e'];
 
-        p.apply_slice_in_place(vec.as_mut_slice());
-
+        p.apply_slice_in_place(&mut vec);
         assert_eq!(vec, vec!['c', 'a', 'b', 'e', 'd']);
+    }
+
+    #[test]
+    fn apply_unnorm_in_place() {
+        let mut p = Permutation::from_vec([2, 0, 1, 4, 3]).normalize(false);
+        let p_old = p.clone();
+
+        let mut vec = ['a', 'b', 'c', 'd', 'e'];
+
+        p.apply_slice_in_place(&mut vec);
+
+        assert_eq!(vec, ['c', 'a', 'b', 'e', 'd']);
         assert_eq!(p.indices, p_old.indices);
         assert_eq!(p.inv, p_old.inv);
     }
 
     #[test]
     fn apply_norm_in_place() {
-        let mut p = Permutation::from_vec(vec![2, 0, 1, 4, 3]).normalize(true);
+        let mut p = Permutation::from_vec([2, 0, 1, 4, 3]).normalize(true);
         let p_old = p.clone();
 
-        let mut vec = vec!['a', 'b', 'c', 'd', 'e'];
+        let mut vec = ['a', 'b', 'c', 'd', 'e'];
 
-        p.apply_slice_in_place(vec.as_mut_slice());
+        p.apply_slice_in_place(&mut vec);
 
-        assert_eq!(vec, vec!['c', 'a', 'b', 'e', 'd']);
+        assert_eq!(vec, ['c', 'a', 'b', 'e', 'd']);
         assert_eq!(p.indices, p_old.indices);
         assert_eq!(p.inv, p_old.inv);
     }
 
     #[test]
     fn apply_inv_unnorm_place() {
-        let mut p = Permutation::from_vec(vec![2, 0, 1, 4, 3])
+        let mut p = Permutation::from_vec([2, 0, 1, 4, 3])
             .inverse()
             .normalize(false);
         let p_old = p.clone();
 
-        let mut vec = vec!['c', 'a', 'b', 'e', 'd'];
+        let mut vec = ['c', 'a', 'b', 'e', 'd'];
 
-        p.apply_slice_in_place(vec.as_mut_slice());
+        p.apply_slice_in_place(&mut vec);
 
-        assert_eq!(vec, vec!['a', 'b', 'c', 'd', 'e']);
+        assert_eq!(vec, ['a', 'b', 'c', 'd', 'e']);
         assert_eq!(p.indices, p_old.indices);
         assert_eq!(p.inv, p_old.inv);
     }
 
     #[test]
     fn apply_inv_norm_in_place() {
-        let mut p = Permutation::from_vec(vec![2, 0, 1, 4, 3])
+        let mut p = Permutation::from_vec([2, 0, 1, 4, 3])
             .inverse()
             .normalize(true);
         let p_old = p.clone();
 
-        let mut vec = vec!['c', 'a', 'b', 'e', 'd'];
+        let mut vec = ['c', 'a', 'b', 'e', 'd'];
 
-        p.apply_slice_in_place(vec.as_mut_slice());
+        p.apply_slice_in_place(&mut vec);
 
-        assert_eq!(vec, vec!['a', 'b', 'c', 'd', 'e']);
+        assert_eq!(vec, ['a', 'b', 'c', 'd', 'e']);
         assert_eq!(p.indices, p_old.indices);
         assert_eq!(p.inv, p_old.inv);
     }

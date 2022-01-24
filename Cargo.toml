@@ -1,13 +1,13 @@
 [package]
 name = "permutation"
 description = "Small utility for creating, manipulating, and applying permutations."
-documentation = "https://docs.rs/permutation/0.2.5/permutation"
+documentation = "https://docs.rs/permutation/0.3.0/permutation"
 repository = "https://github.com/jeremysalwen/rust-permutations"
 keywords = ["permutation", "permutations", "order", "sort", "group"]
 categories = ["algorithms", "data-structures"]
 license = "Apache-2.0/MIT"
 readme = "readme.md"
-version = "0.2.5"
+version = "0.3.0"
 authors = ["Jeremy Salwen <jeremysalwen@gmail.com>"]
 
 [dependencies]
