@@ -4,14 +4,14 @@ use std::convert::AsRef;
 
 #[derive(Clone, Debug)]
 pub struct Permutation {
-    inv: bool,
+    forward: bool,
     indices: Vec<usize>,
 }
 
 impl std::cmp::PartialEq for Permutation {
-    ///  This method compares two Permutations for equality, and is uses by `==`
+    ///  This method compares two Permutations for equality, and is used by `==`
     fn eq(&self, other: &Permutation) -> bool {
-        if self.inv == other.inv {
+        if self.forward == other.forward {
             self.indices == other.indices
         } else {
             self.indices
@@ -33,17 +33,17 @@ impl<'a, 'b> std::ops::Mul<&'b Permutation> for &'a Permutation {
     ///
     /// ```
     /// # use permutation::Permutation;
-    /// let p1 = Permutation::from_vec([1, 0, 2]);
-    /// let p2 = Permutation::from_vec([0, 2, 1]);
-    /// assert_eq!(&p1 * &p2, Permutation::from_vec([2,0,1]));
+    /// let p1 = Permutation::oneline([1, 0, 2]);
+    /// let p2 = Permutation::oneline([0, 2, 1]);
+    /// assert_eq!(&p1 * &p2, Permutation::oneline([1,2,0]));
     /// ```
 
     fn mul(self, rhs: &'b Permutation) -> Self::Output {
-        match (self.inv, rhs.inv) {
-            (_, false) => Permutation::from_vec(self.apply_slice(&rhs.indices)),
+        match (self.forward, rhs.forward) {
+            (_, false) => Permutation::oneline(self.apply_slice(&rhs.indices)).inverse(),
             (false, true) => return self * &(rhs * &Permutation::one(self.len())),
             (true, true) => Permutation {
-                inv: true,
+                forward: true,
                 indices: rhs.apply_inv_slice(&self.indices),
             },
         }
@@ -65,18 +65,50 @@ impl Permutation {
     /// let permutation = Permutation::from_vec([0,2,3,1]);
     /// assert_eq!(permutation.apply_slice(&vec), vec!['a','c','d','b']);
     /// ```
+    #[deprecated(since = "0.4.0", note = "Please replace with oneline(vec).inverse()")]
     pub fn from_vec<V>(vec: V) -> Permutation
     where
         V: Into<Vec<usize>>,
     {
         let result = Permutation {
-            inv: false,
+            forward: false,
             indices: vec.into(),
         };
 
         debug_assert!(result.valid());
         return result;
     }
+
+    /// Create a permutation from zero-based oneline notation
+    ///
+    /// This creates a permutation from [one-line notation](https://en.wikipedia.org/wiki/Permutation#Definition_and_notations)
+    /// notation used in mathematics, but using zero-based indices rather than the one-based indices
+    /// typically used in mathematics.
+    ///
+    /// Note that this is the inverse notation used by the deprecated `Permutation::from_vec()`.
+    ///
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use permutation::Permutation;
+    /// let vec = vec!['a','b','c','d'];
+    /// let permutation = Permutation::oneline([0,2,3,1]);
+    /// assert_eq!(permutation.apply_slice(&vec), vec!['a','d','b','c']);
+    /// ```
+    pub fn oneline<V>(vec: V) -> Permutation
+    where
+        V: Into<Vec<usize>>,
+    {
+        let result = Permutation {
+            forward: true,
+            indices: vec.into(),
+        };
+
+        debug_assert!(result.valid());
+        return result;
+    }
+
     /// Computes the permutation that would sort a given slice.
     ///
     /// This is the same as `permutation::sort()`, but assigned in-place to `self` rather than
@@ -201,7 +233,7 @@ impl Permutation {
     /// ```
     pub fn one(len: usize) -> Permutation {
         Permutation {
-            inv: false,
+            forward: false,
             indices: (0..len).collect(),
         }
     }
@@ -221,8 +253,9 @@ impl Permutation {
     /// Check whether a permutation is valid.
     ///
     /// A permutation can be invalid if it was constructed with an
-    /// incorrect vector using ``::from_vec()``.  Debug assertions will
-    /// catch this on construction, so it should never return true.
+    /// incorrect vector using ``::from_vec()`` or ``::oneline()``.  
+    /// Debug assertions will catch this on construction, so it should
+    /// never return true.
     ///
     pub fn valid(&self) -> bool {
         let mut sorted = self.indices.clone();
@@ -237,11 +270,11 @@ impl Permutation {
     ///
     /// ```
     /// # use permutation::Permutation;
-    /// let permutation = Permutation::from_vec([0,2,3,1]);
-    /// assert_eq!(permutation.inverse(), Permutation::from_vec([0,3,1,2]));
+    /// let permutation = Permutation::oneline([0,2,3,1]);
+    /// assert_eq!(permutation.inverse(), Permutation::oneline([0,3,1,2]));
     /// ```
     pub fn inverse(mut self) -> Permutation {
-        self.inv ^= true;
+        self.forward ^= true;
         return self;
     }
 
@@ -263,15 +296,12 @@ impl Permutation {
     ///
     /// ```
     /// # use permutation::Permutation;
-    /// let permutation = Permutation::from_vec([0, 3, 2, 5, 1, 4]);
+    /// let permutation = Permutation::oneline([0, 3, 2, 5, 1, 4]);
     /// let reversed = permutation.inverse().normalize(true);
-    /// assert_eq!(reversed.apply_inv_idx(3), 1);
+    /// assert_eq!(reversed.apply_inv_idx(3), 5);
     /// ```
     pub fn normalize(self, backward: bool) -> Permutation {
-        // Note that "reverse" index lookups are easier, so we actually
-        // want reversed == true for forward normalization,
-        // and reverse == false for backward normalization.
-        if self.inv ^ backward {
+        if self.forward ^ backward {
             self
         } else {
             let len = self.len();
@@ -294,14 +324,17 @@ impl Permutation {
     /// Given an index of an element, this will return the new index
     /// of that element after applying the permutation.
     ///
+    /// Note that the running time will be O(1) or O(N) depending on
+    /// how the permutation is normalized (see [`Permutation::normalize`]).
+    ///
     /// # Examples
     ///
     /// ```
     /// # use permutation::Permutation;
-    /// let permutation = Permutation::from_vec([0,2,1]);
-    /// assert_eq!(permutation.apply_idx(2), 1);
+    /// let permutation = Permutation::oneline([0,2,1]);
+    /// assert_eq!(permutation.apply_idx(1), 2);
     pub fn apply_idx(&self, idx: usize) -> usize {
-        match self.inv {
+        match self.forward {
             false => self.apply_idx_fwd(idx),
             true => self.apply_idx_bkwd(idx),
         }
@@ -314,15 +347,18 @@ impl Permutation {
     ///
     /// Equivalently, if `P.apply_idx(i) == j`, then `P.apply_inv_idx(j) == i`.
     ///
+    /// Note that the running time will be O(1) or O(N) depending on
+    /// how the permutation is normalized (see [`Permutation::normalize`]).
+    ///
     /// # Examples
     ///
     /// ```
     /// # use permutation::Permutation;
-    /// let permutation = Permutation::from_vec([0,2,1]);
-    /// assert_eq!(permutation.apply_inv_idx(1), 2);
+    /// let permutation = Permutation::oneline([0,2,1]);
+    /// assert_eq!(permutation.apply_inv_idx(2), 1);
     /// ```
     pub fn apply_inv_idx(&self, idx: usize) -> usize {
-        match self.inv {
+        match self.forward {
             true => self.apply_idx_fwd(idx),
             false => self.apply_idx_bkwd(idx),
         }
@@ -448,9 +484,9 @@ impl Permutation {
     ///
     /// ```
     /// # use permutation::Permutation;
-    /// let permutation = Permutation::from_vec([0,3,1,2]);
+    /// let permutation = Permutation::oneline([0,3,1,2]);
     /// let vec = vec!['a','b','c','d'];
-    /// assert_eq!(permutation.apply_slice(&vec), vec!['a', 'd', 'b', 'c']);
+    /// assert_eq!(permutation.apply_slice(&vec), vec!['a', 'c', 'd', 'b']);
     /// ```
     #[must_use]
     pub fn apply_slice<T: Clone, S>(&self, slice: S) -> Vec<T>
@@ -459,7 +495,7 @@ impl Permutation {
     {
         let s = slice.as_ref();
         assert_eq!(s.len(), self.len());
-        match self.inv {
+        match self.forward {
             false => self.apply_slice_fwd(s),
             true => self.apply_slice_bkwd(s),
         }
@@ -474,9 +510,9 @@ impl Permutation {
     ///
     /// ```
     /// # use permutation::Permutation;
-    /// let permutation = Permutation::from_vec([0,3,1,2]);
+    /// let permutation = Permutation::oneline([0,3,1,2]);
     /// let vec = vec!['a','b', 'c', 'd'];
-    /// assert_eq!(permutation.apply_inv_slice(vec), vec!['a', 'c', 'd', 'b']);
+    /// assert_eq!(permutation.apply_inv_slice(vec), vec!['a', 'd', 'b', 'c']);
     /// ```
     #[must_use]
     pub fn apply_inv_slice<T: Clone, S>(&self, slice: S) -> Vec<T>
@@ -485,7 +521,7 @@ impl Permutation {
     {
         let s = slice.as_ref();
         assert_eq!(s.len(), self.len());
-        match self.inv {
+        match self.forward {
             false => self.apply_slice_bkwd(s),
             true => self.apply_slice_fwd(s),
         }
@@ -508,17 +544,18 @@ impl Permutation {
     ///
     /// ```
     /// # use permutation::Permutation;
-    /// let mut permutation = Permutation::from_vec([0,3,1,2]);
+    /// let mut permutation = Permutation::oneline([0,3,1,2]);
     /// let mut vec = vec!['a', 'b', 'c', 'd'];
     /// let permutation_old = permutation.clone();
     /// permutation.apply_slice_in_place(&mut vec);
-    /// assert_eq!(vec, vec!['a', 'd', 'b', 'c']);
+    /// assert_eq!(vec, vec!['a', 'c', 'd', 'b']);
+    /// assert_eq!(permutation, permutation_old);
     /// ```
     pub fn apply_slice_in_place<T, S>(&mut self, slice: &mut S)
     where
         S: AsMut<[T]>,
     {
-        match self.inv {
+        match self.forward {
             false => self.apply_slice_bkwd_in_place(slice),
             true => self.apply_slice_fwd_in_place(slice),
         }
@@ -542,16 +579,16 @@ impl Permutation {
     ///
     /// ```
     /// # use permutation::Permutation;
-    /// let mut permutation = Permutation::from_vec([0,3,1,2]).normalize(false);
+    /// let mut permutation = Permutation::oneline([0,3,1,2]);
     /// let mut vec = vec!['a', 'b', 'c', 'd'];
     /// permutation.apply_inv_slice_in_place(&mut vec);
-    /// assert_eq!(vec, vec!['a', 'c', 'd', 'b']);
+    /// assert_eq!(vec, vec!['a', 'd', 'b', 'c']);
     /// ```
     pub fn apply_inv_slice_in_place<T, S>(&mut self, slice: &mut S)
     where
         S: AsMut<[T]>,
     {
-        match self.inv {
+        match self.forward {
             false => self.apply_slice_fwd_in_place(slice),
             true => self.apply_slice_bkwd_in_place(slice),
         }
@@ -677,26 +714,34 @@ mod tests {
     }
 
     #[test]
-    fn from_vec() {
-        let p = Permutation::from_vec(vec![0, 1, 2]);
+    #[allow(deprecated)]
+    fn from_vec_oneline() {
+        let p_from_vec = Permutation::from_vec(vec![0, 1, 2]);
+        let p_oneline = Permutation::oneline(vec![0, 1, 2]);
+        assert_eq!(p_from_vec, p_oneline);
+    }
+
+    #[test]
+    fn oneline() {
+        let p = Permutation::oneline(vec![0, 1, 2]);
         assert!(p.valid());
     }
     #[test]
-    fn from_vec_slice() {
+    fn oneline_slice() {
         let v = vec![0, 1, 2];
-        let p = Permutation::from_vec(&v[..]);
+        let p = Permutation::oneline(&v[..]);
         assert!(p.valid());
     }
     #[test]
-    fn from_vec_array() {
-        let p = Permutation::from_vec([0, 1, 2]);
+    fn oneline_array() {
+        let p = Permutation::oneline([0, 1, 2]);
         assert!(p.valid());
     }
 
     #[test]
     fn powers() {
         let id = Permutation::one(3);
-        let p1 = Permutation::from_vec([1, 0, 2]);
+        let p1 = Permutation::oneline([1, 0, 2]);
         let square = &p1 * &p1;
         assert_eq!(square, id);
         let cube = &p1 * &square;
@@ -704,14 +749,14 @@ mod tests {
     }
     #[test]
     fn prod() {
-        let p1 = Permutation::from_vec([1, 0, 2]);
-        let p2 = Permutation::from_vec([0, 2, 1]);
+        let p1 = Permutation::oneline([1, 0, 2]);
+        let p2 = Permutation::oneline([0, 2, 1]);
         let prod = &p1 * &p2;
-        assert_eq!(prod, Permutation::from_vec([2, 0, 1]));
+        assert_eq!(prod, Permutation::oneline([1, 2, 0]));
     }
     #[test]
     fn len() {
-        let p1 = Permutation::from_vec([1, 0, 2]);
+        let p1 = Permutation::oneline([1, 0, 2]);
         assert_eq!(p1.len(), 3)
     }
     fn check_not_equal_inverses(p2: &Permutation, p3: &Permutation) {
@@ -726,13 +771,13 @@ mod tests {
     }
     #[test]
     fn inverse() {
-        let p1 = Permutation::from_vec([1, 0, 2]);
+        let p1 = Permutation::oneline([1, 0, 2]);
         let rev = p1.clone().inverse();
         assert_eq!(p1, rev);
 
         //An element and its inverse
-        let p2 = Permutation::from_vec([1, 2, 0, 4, 3]);
-        let p3 = Permutation::from_vec([2, 0, 1, 4, 3]);
+        let p2 = Permutation::oneline([1, 2, 0, 4, 3]);
+        let p3 = Permutation::oneline([2, 0, 1, 4, 3]);
 
         check_not_equal_inverses(&p2, &p3);
         println!(
@@ -747,8 +792,8 @@ mod tests {
         );
 
         //An element, and a distinct element which is not its inverse.
-        let p4 = Permutation::from_vec([1, 2, 0, 3, 4]);
-        let p5 = Permutation::from_vec([2, 0, 1, 4, 3]);
+        let p4 = Permutation::oneline([1, 2, 0, 3, 4]);
+        let p5 = Permutation::oneline([2, 0, 1, 4, 3]);
 
         assert!(p4 != p5);
         assert!(p4 != p5.clone().inverse());
@@ -762,10 +807,10 @@ mod tests {
 
     #[test]
     fn sort_slice() {
-        let elems = ['a', 'b', 'e', 'g', 'f'];
+        let elems = ['a', 'b', 'g', 'e', 'f'];
         let perm = permutation::sort(&elems[..]);
         println!("{:?}", perm);
-        assert_eq!(perm, Permutation::from_vec([0, 1, 2, 4, 3]));
+        assert_eq!(perm, Permutation::oneline([0, 1, 4, 2, 3]));
     }
     #[test]
     fn sort_array() {
@@ -786,7 +831,7 @@ mod tests {
     fn strings() {
         let elems = ["doggie", "cat", "doggo", "dog", "doggies", "god"];
         let perm = permutation::sort(&elems);
-        assert_eq!(perm, Permutation::from_vec([1, 3, 0, 4, 2, 5]));
+        assert_eq!(perm, Permutation::oneline([2, 0, 4, 1, 3, 5]));
 
         assert!(perm.apply_slice(&elems) == ["cat", "dog", "doggie", "doggies", "doggo", "god"]);
         let parallel = ["doggie1", "cat1", "doggo1", "dog1", "doggies1", "god1"];
@@ -803,28 +848,28 @@ mod tests {
     fn by_key() {
         let arr = [1, 10, 9, 8];
         let perm = permutation::sort_by_key(arr, |i| -i);
-        assert_eq!(perm, Permutation::from_vec([1, 2, 3, 0]));
+        assert_eq!(perm, Permutation::oneline([3, 0, 1, 2]));
     }
 
     #[test]
     fn by_cmp() {
         let arr = ["aaabaab", "aba", "cas", "aaab"];
         let perm = permutation::sort_by(arr, |a, b| a.cmp(b));
-        assert_eq!(perm, Permutation::from_vec([3, 0, 1, 2]));
+        assert_eq!(perm, Permutation::oneline([1, 2, 3, 0]));
     }
 
     #[test]
     fn by_partially_ordered_cmp() {
         let arr = [1.0, 5.0, 3.0, 2.0, 8.0];
         let perm = permutation::sort_by(arr, |a, b| a.partial_cmp(b).unwrap());
-        assert!(perm == Permutation::from_vec([0, 3, 2, 1, 4]));
+        assert!(perm == Permutation::oneline([0, 3, 2, 1, 4]));
     }
 
     #[test]
     fn apply_array() {
         let arr = [1, 10, 9, 8];
         let perm = permutation::sort_by_key(arr, |i| -i);
-        assert_eq!(perm, Permutation::from_vec([1, 2, 3, 0]));
+        assert_eq!(perm, Permutation::oneline([3, 0, 1, 2]));
     }
     #[test]
     fn indices() {
@@ -871,13 +916,13 @@ mod tests {
     }
     #[test]
     fn normalize_inv() {
-        let p1 = Permutation::from_vec([1, 0, 2]);
+        let p1 = Permutation::oneline([1, 0, 2]);
         let rev = p1.clone().inverse();
         assert_eq!(p1, rev);
 
         //An element and its inverse
-        let mut p2 = Permutation::from_vec([1, 2, 0, 4, 3]);
-        let mut p3 = Permutation::from_vec([2, 0, 1, 4, 3]);
+        let mut p2 = Permutation::oneline([2, 0, 1, 4, 3]);
+        let mut p3 = Permutation::oneline([1, 2, 0, 4, 3]);
 
         p2 = p2.normalize(false);
         p3 = p3.normalize(false);
@@ -898,7 +943,7 @@ mod tests {
 
     #[test]
     fn apply_slice_in_place_vec() {
-        let mut p = Permutation::from_vec([2, 0, 1, 4, 3]);
+        let mut p = Permutation::oneline([1, 2, 0, 4, 3]);
 
         let mut vec = vec!['a', 'b', 'c', 'd', 'e'];
 
@@ -908,7 +953,7 @@ mod tests {
 
     #[test]
     fn apply_unnorm_in_place() {
-        let mut p = Permutation::from_vec([2, 0, 1, 4, 3]).normalize(false);
+        let mut p = Permutation::oneline([1, 2, 0, 4, 3]).normalize(false);
         let p_old = p.clone();
 
         let mut vec = ['a', 'b', 'c', 'd', 'e'];
@@ -917,12 +962,12 @@ mod tests {
 
         assert_eq!(vec, ['c', 'a', 'b', 'e', 'd']);
         assert_eq!(p.indices, p_old.indices);
-        assert_eq!(p.inv, p_old.inv);
+        assert_eq!(p.forward, p_old.forward);
     }
 
     #[test]
     fn apply_norm_in_place() {
-        let mut p = Permutation::from_vec([2, 0, 1, 4, 3]).normalize(true);
+        let mut p = Permutation::oneline([1, 2, 0, 4, 3]).normalize(true);
         let p_old = p.clone();
 
         let mut vec = ['a', 'b', 'c', 'd', 'e'];
@@ -931,12 +976,12 @@ mod tests {
 
         assert_eq!(vec, ['c', 'a', 'b', 'e', 'd']);
         assert_eq!(p.indices, p_old.indices);
-        assert_eq!(p.inv, p_old.inv);
+        assert_eq!(p.forward, p_old.forward);
     }
 
     #[test]
     fn apply_inv_unnorm_place() {
-        let mut p = Permutation::from_vec([2, 0, 1, 4, 3])
+        let mut p = Permutation::oneline([1, 2, 0, 4, 3])
             .inverse()
             .normalize(false);
         let p_old = p.clone();
@@ -947,12 +992,12 @@ mod tests {
 
         assert_eq!(vec, ['a', 'b', 'c', 'd', 'e']);
         assert_eq!(p.indices, p_old.indices);
-        assert_eq!(p.inv, p_old.inv);
+        assert_eq!(p.forward, p_old.forward);
     }
 
     #[test]
     fn apply_inv_norm_in_place() {
-        let mut p = Permutation::from_vec([2, 0, 1, 4, 3])
+        let mut p = Permutation::oneline([1, 2, 0, 4, 3])
             .inverse()
             .normalize(true);
         let p_old = p.clone();
@@ -963,6 +1008,6 @@ mod tests {
 
         assert_eq!(vec, ['a', 'b', 'c', 'd', 'e']);
         assert_eq!(p.indices, p_old.indices);
-        assert_eq!(p.inv, p_old.inv);
+        assert_eq!(p.forward, p_old.forward);
     }
 }

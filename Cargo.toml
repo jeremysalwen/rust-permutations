@@ -7,7 +7,7 @@ keywords = ["permutation", "permutations", "order", "sort", "group"]
 categories = ["algorithms", "data-structures"]
 license = "Apache-2.0/MIT"
 readme = "readme.md"
-version = "0.3.0"
+version = "0.4.0"
 authors = ["Jeremy Salwen <jeremysalwen@gmail.com>"]
 
 [dependencies]
