@@ -11,3 +11,11 @@ version = "0.4.0"
 authors = ["Jeremy Salwen <jeremysalwen@gmail.com>"]
 
 [dependencies]
+
+[dev-dependencies]
+bencher = "0.1.5"
+rand = "0.8.4"
+
+[[bench]]
+name = "multiplication"
+harness = false

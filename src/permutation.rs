@@ -41,12 +41,124 @@ impl<'a, 'b> std::ops::Mul<&'b Permutation> for &'a Permutation {
     fn mul(self, rhs: &'b Permutation) -> Self::Output {
         match (self.forward, rhs.forward) {
             (_, false) => Permutation::oneline(self.apply_slice(&rhs.indices)).inverse(),
-            (false, true) => return self * &(rhs * &Permutation::one(self.len())),
+            (false, true) => self * &(rhs * &Permutation::one(self.len())),
             (true, true) => Permutation {
                 forward: true,
                 indices: rhs.apply_inv_slice(&self.indices),
             },
         }
+    }
+}
+pub fn single_allocation_inv_mul_per(lhs: &Permutation, rhs: &Permutation) -> Permutation {
+    assert!(!lhs.forward);
+    assert!(rhs.forward);
+    Permutation {
+        forward: true,
+        indices: single_allocation_inv_mul(&lhs.indices, &rhs.indices),
+    }
+}
+pub fn single_allocation_inv_mul(lhs: &Vec<usize>, rhs: &Vec<usize>) -> Vec<usize> {
+    let mut result = vec![0; lhs.len()];
+    for (i, v) in lhs.iter().enumerate() {
+        result[*v] = i
+    }
+    for (i, v) in rhs.iter().enumerate() {
+        let mut ind = *v;
+        while ind < i {
+            ind = lhs[result[ind]];
+        }
+        result.swap(i, ind);
+    }
+    result
+}
+pub fn single_allocation_inv_mul2(lhs: &Permutation, rhs: &Permutation) -> Permutation {
+    assert!(!lhs.forward);
+    assert!(rhs.forward);
+    let mut result = lhs.clone().normalize(true);
+
+    for i in 0..rhs.indices.len() {
+        let i_idx = rhs.indices[i];
+
+        if Permutation::idx_is_marked(result.indices[i]) {
+            continue;
+        }
+
+        let mut j = i;
+        let mut j_idx = i_idx;
+
+        // When we loop back to the first index, we stop
+        while j_idx != i {
+            result.indices.swap(j, j_idx);
+            result.indices[j] = Permutation::toggle_mark_idx(result.indices[j]);
+            j = j_idx;
+            j_idx = rhs.indices[j];
+        }
+
+        result.indices[j] = Permutation::toggle_mark_idx(result.indices[j]);
+    }
+
+    for idx in result.indices.iter_mut() {
+        *idx = Permutation::toggle_mark_idx(*idx);
+    }
+    result
+}
+
+
+impl<'b> std::ops::Mul<&'b mut Permutation> for Permutation {
+    type Output = Permutation;
+    /// Multiply permutations, in the mathematical sense.
+    ///
+    /// Given two permutations `a`, and `b`, `a * b` is defined as
+    /// the permutation created by first applying b, then applying a.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use permutation::Permutation;
+    /// let p1 = Permutation::oneline([1, 0, 2]);
+    /// let mut p2 = Permutation::oneline([0, 2, 1]);
+    /// assert_eq!(p1 * &mut p2, Permutation::oneline([1,2,0]));
+    /// ```
+
+    fn mul(mut self, rhs: &'b mut Permutation) -> Self::Output {
+        if self.forward {
+            rhs.apply_inv_slice_in_place(&mut self.indices);
+        } else {
+            if rhs.forward {
+                rhs.invert_representation();
+            }
+            self.indices.iter_mut().for_each(|v| *v = rhs.indices[*v]);
+        }
+        self
+    }
+}
+
+impl<'a> std::ops::Mul<Permutation> for &'a mut Permutation {
+    type Output = Permutation;
+    /// Multiply permutations, in the mathematical sense.
+    ///
+    /// Given two permutations `a`, and `b`, `a * b` is defined as
+    /// the permutation created by first applying b, then applying a.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use permutation::Permutation;
+    /// let mut p1 = Permutation::oneline([1, 0, 2]);
+    /// let p2 = Permutation::oneline([0, 2, 1]);
+    /// assert_eq!(&mut p1 * p2, Permutation::oneline([1,2,0]));
+    /// ```
+
+    fn mul(self, mut rhs: Permutation) -> Self::Output {
+        if rhs.forward {
+            if !self.forward {
+                self.invert_representation();
+            }
+            rhs.indices.iter_mut().for_each(|v| *v = self.indices[*v]);
+        } else {
+            self.apply_slice_in_place(&mut rhs.indices);
+        }
+        rhs
     }
 }
 
@@ -300,18 +412,50 @@ impl Permutation {
     /// let reversed = permutation.inverse().normalize(true);
     /// assert_eq!(reversed.apply_inv_idx(3), 5);
     /// ```
-    pub fn normalize(self, backward: bool) -> Permutation {
+    pub fn normalize(mut self, backward: bool) -> Permutation {
         if self.forward ^ backward {
             self
         } else {
-            let len = self.len();
-            if backward {
-                &self * &Permutation::one(len)
-            } else {
-                (&self.inverse() * &Permutation::one(len)).inverse()
-            }
+            self.invert_representation();
+            self
         }
     }
+
+    pub fn invert_representation(&mut self) {
+        assert!(self.indices.len() <= isize::max_value() as usize);
+
+        self.forward = !self.forward;
+
+        for idx in self.indices.iter() {
+            debug_assert!(!Self::idx_is_marked(*idx));
+        }
+
+        for i in 0..self.indices.len() {
+            let i_idx = self.indices[i];
+
+            if Self::idx_is_marked(i_idx) {
+                continue;
+            }
+
+            let mut j = i;
+            let mut j_idx = i_idx;
+
+            // When we loop back to the first index, we stop
+            while j_idx != i {
+                let previous = j;
+                j = j_idx;
+                j_idx = self.indices[j];
+                self.indices[j] = Self::toggle_mark_idx(previous);
+            }
+            self.indices[i] = Self::toggle_mark_idx(j);
+        }
+
+        for idx in self.indices.iter_mut() {
+            debug_assert!(Self::idx_is_marked(*idx));
+            *idx = Self::toggle_mark_idx(*idx);
+        }
+    }
+
     fn apply_idx_fwd(&self, idx: usize) -> usize {
         self.indices.iter().position(|&v| v == idx).unwrap()
     }
@@ -1009,5 +1153,39 @@ mod tests {
         assert_eq!(vec, ['a', 'b', 'c', 'd', 'e']);
         assert_eq!(p.indices, p_old.indices);
         assert_eq!(p.forward, p_old.forward);
+    }
+
+    #[test]
+    fn multiplication_in_place() {
+        let mut p1 = Permutation::oneline([2, 0, 1, 3]);
+        let mut p2 = Permutation::oneline([0, 3, 1, 2]);
+
+        p1 = p1.normalize(false);
+        p2 = p2.normalize(false);
+        assert_eq!(p1.clone() * &mut p2, &p1 * &p2);
+        p1 = p1.normalize(false);
+        p2 = p2.normalize(false);
+        assert_eq!(&mut p1 * p2.clone(), &p1 * &p2);
+
+        p1 = p1.normalize(true);
+        p2 = p2.normalize(false);
+        assert_eq!(p1.clone() * &mut p2, &p1 * &p2);
+        p1 = p1.normalize(true);
+        p2 = p2.normalize(false);
+        assert_eq!(&mut p1 * p2.clone(), &p1 * &p2);
+
+        p1 = p1.normalize(false);
+        p2 = p2.normalize(true);
+        assert_eq!(p1.clone() * &mut p2, &p1 * &p2);
+        p1 = p1.normalize(false);
+        p2 = p2.normalize(true);
+        assert_eq!(&mut p1 * p2.clone(), &p1 * &p2);
+
+        p1 = p1.normalize(true);
+        p2 = p2.normalize(true);
+        assert_eq!(p1.clone() * &mut p2, &p1 * &p2);
+        p1 = p1.normalize(true);
+        p2 = p2.normalize(true);
+        assert_eq!(&mut p1 * p2.clone(), &p1 * &p2);
     }
 }
