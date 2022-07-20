@@ -633,6 +633,46 @@ where
     return permutation;
 }
 
+/// Return the permutation that would sort a given slice, but might not
+/// preserve the order of equal elements.
+///
+/// This calculates the permutation that if it were applied to the slice,
+/// would put the elements in sorted order.
+///
+/// # Examples
+///
+/// ```
+/// # use permutation::Permutation;
+/// let mut vec = vec!['z','w','h','a','s','j'];
+/// let permutation = permutation::sort_unstable(&vec);
+/// let permuted = permutation.apply_slice(&vec);
+/// vec.sort();
+/// assert_eq!(vec, permuted);
+/// ```
+///
+/// You can also use it to sort multiple arrays based on the ordering of one.
+///
+/// ```
+/// let names = vec!["Bob", "Steve", "Jane"];
+/// let salary = vec![10, 5, 15];
+/// let permutation = permutation::sort_unstable(&salary);
+/// let ordered_names = permutation.apply_slice(&names);
+/// let ordered_salaries = permutation.apply_slice(&salary);
+/// assert_eq!(ordered_names, vec!["Steve", "Bob", "Jane"]);
+/// assert_eq!(ordered_salaries, vec![5, 10, 15]);
+/// ```
+pub fn sort_unstable<T, S>(slice: S) -> Permutation
+where
+    T: Ord,
+    S: AsRef<[T]>,
+{
+    let s = slice.as_ref();
+    let mut permutation = Permutation::one(s.len());
+    //We use the reverse permutation form, because its more efficient for applying to indices.
+    permutation.indices.sort_unstable_by_key(|&i| &s[i]);
+    return permutation;
+}
+
 /// Return the permutation that would sort a given slice by a comparator.
 ///
 /// This is the same as `permutation::sort()` except that it allows you to specify
@@ -667,6 +707,43 @@ where
     return permutation;
 }
 
+/// Return the permutation that would sort a given slice by a comparator, but might not
+/// preserve the order of equal elements.
+///
+/// This is the same as `permutation::sort_unstable()` except that it allows you to specify
+/// the comparator to use when sorting similar to `std::slice.sort_unstable_by()`.
+///
+/// If the comparator does not define a total ordering, the order of the elements is unspecified.
+/// Per the [Rust Docs](https://doc.rust-lang.org/std/vec/struct.Vec.html#method.sort_unstable_by),
+/// an order is a total order if it is (for all `a`, `b` and `c`):
+///
+/// * total and antisymmetric: exactly one of `a < b`, `a == b` or `a > b` is true, and
+/// * transitive, `a < b` and `b < c` implies `a < c`. The same must hold for both `==` and `>`.
+///
+/// # Examples
+///
+/// ```
+/// # use permutation::Permutation;
+/// let mut vec = vec!['z','w','h','a','s','j'];
+/// let permutation = permutation::sort_unstable_by(&vec, |a, b| b.cmp(a));
+/// let permuted = permutation.apply_slice(&vec);
+/// vec.sort_by(|a,b| b.cmp(a));
+/// assert_eq!(vec, permuted);
+/// ```
+pub fn sort_unstable_by<T, S, F>(slice: S, mut compare: F) -> Permutation
+where
+    S: AsRef<[T]>,
+    F: FnMut(&T, &T) -> Ordering,
+{
+    let s = slice.as_ref();
+    let mut permutation = Permutation::one(s.len());
+    //We use the reverse permutation form, because its more efficient for applying to indices.
+    permutation
+        .indices
+        .sort_unstable_by(|&i, &j| compare(&s[i], &s[j]));
+    return permutation;
+}
+
 /// Return the permutation that would sort a given slice by a key function.
 ///
 /// This is the same as `permutation::sort()` except that it allows you to specify
@@ -692,6 +769,35 @@ where
     let mut permutation = Permutation::one(s.len());
     //We use the reverse permutation form, because its more efficient for applying to indices.
     permutation.indices.sort_by_key(|&i| f(&s[i]));
+    return permutation;
+}
+
+/// Return the permutation that would sort a given slice by a key function, but might not
+/// preserve the order of equal elements.
+///
+/// This is the same as `permutation::sort_unstable()` except that it allows you to specify
+/// the key function simliar to `std::slice.sort_unstable_by_key()`
+///
+/// # Examples
+///
+/// ```
+/// # use permutation::Permutation;
+/// let mut vec = vec![2, 4, 6, 8, 10, 11];
+/// let permutation = permutation::sort_unstable_by_key(&vec, |a| a % 3);
+/// let permuted = permutation.apply_slice(&vec);
+/// vec.sort_by_key(|a| a % 3);
+/// assert_eq!(vec, permuted);
+/// ```
+pub fn sort_unstable_by_key<T, S, B, F>(slice: S, mut f: F) -> Permutation
+where
+    B: Ord,
+    S: AsRef<[T]>,
+    F: FnMut(&T) -> B,
+{
+    let s = slice.as_ref();
+    let mut permutation = Permutation::one(s.len());
+    //We use the reverse permutation form, because its more efficient for applying to indices.
+    permutation.indices.sort_unstable_by_key(|&i| f(&s[i]));
     return permutation;
 }
 
