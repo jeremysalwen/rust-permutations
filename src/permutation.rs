@@ -399,7 +399,7 @@ impl Permutation {
 
     fn apply_slice_bkwd_in_place<T, S>(&mut self, slice: &mut S)
     where
-        S: AsMut<[T]>,
+        S: AsMut<[T]> + ?Sized,
     {
         let s = slice.as_mut();
         assert_eq!(s.len(), self.len());
@@ -438,7 +438,7 @@ impl Permutation {
 
     fn apply_slice_fwd_in_place<T, S>(&mut self, slice: &mut S)
     where
-        S: AsMut<[T]>,
+        S: AsMut<[T]> + ?Sized,
     {
         let s = slice.as_mut();
         assert_eq!(s.len(), self.len());
@@ -553,7 +553,7 @@ impl Permutation {
     /// ```
     pub fn apply_slice_in_place<T, S>(&mut self, slice: &mut S)
     where
-        S: AsMut<[T]>,
+        S: AsMut<[T]> + ?Sized,
     {
         match self.forward {
             false => self.apply_slice_bkwd_in_place(slice),
@@ -586,7 +586,7 @@ impl Permutation {
     /// ```
     pub fn apply_inv_slice_in_place<T, S>(&mut self, slice: &mut S)
     where
-        S: AsMut<[T]>,
+        S: AsMut<[T]> + ?Sized,
     {
         match self.forward {
             false => self.apply_slice_fwd_in_place(slice),
